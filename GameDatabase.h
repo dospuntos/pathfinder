@@ -18,8 +18,8 @@ struct Room {
     int graphX;
     int graphY;
 
-    Room() : id(0), northRoomId(0), southRoomId(0),
-             eastRoomId(0), westRoomId(0), graphX(0), graphY(0) {}
+    Room() : id(0), northRoomId(-1), southRoomId(-1),
+             eastRoomId(-1), westRoomId(-1), graphX(0), graphY(0) {}
 };
 
 // Structure to hold item data
@@ -56,22 +56,11 @@ public:
     GameDatabase();
     ~GameDatabase();
 
-    // Create a new database with schema and starter content
     status_t CreateNew(const char* path);
-
-    // Open an existing database
     status_t Open(const char* path);
-
-    // Close current database
     void Close();
-
-    // Check if a database is currently open
     bool IsOpen() const { return fDatabase != nullptr; }
-
-    // Get current database path
     const char* Path() const { return fDatabasePath.String(); }
-
-    // Verify database has correct schema
     bool VerifySchema();
 
     // Query methods
@@ -79,6 +68,8 @@ public:
     status_t GetItemsInRoom(int roomId, std::vector<Item>& items);
     status_t GetInventoryItems(std::vector<Item>& items);
     status_t GetGameState(GameState& state);
+	status_t UpdateGameState(const GameState& state);
+	status_t MoveToRoom(int newRoomId);
 
     // Get the SQLite database handle (for future advanced queries)
     sqlite3* Handle() const { return fDatabase; }
@@ -87,10 +78,7 @@ private:
     sqlite3* fDatabase;
     BString fDatabasePath;
 
-    // Helper to execute SQL statements
     status_t _ExecuteSQL(const char* sql);
-
-    // Create the database schema
     status_t _CreateSchema();
 
     // Populate with starter content (cave and mountain path)

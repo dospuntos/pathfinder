@@ -120,7 +120,6 @@ GameDatabase::GameDatabase()
     fDatabase(nullptr),
     fDatabasePath("")
 {
-    printf("GameDatabase constructed, fDatabase initialized to %p\n", fDatabase);
 }
 
 
@@ -240,28 +239,19 @@ GameDatabase::Open(const char* path)
 void
 GameDatabase::Close()
 {
-    printf("Close: Called, fDatabase=%p\n", fDatabase);
-
     if (fDatabase != nullptr) {
-        printf("Close: Attempting to close database\n");
         int rc = sqlite3_close(fDatabase);
 
         if (rc != SQLITE_OK) {
             // Database might be busy, try to force close
-            fprintf(stderr, "Warning: sqlite3_close failed with code %d, trying close_v2\n", rc);
             rc = sqlite3_close_v2(fDatabase);
             if (rc != SQLITE_OK) {
                 fprintf(stderr, "Error: sqlite3_close_v2 also failed with code %d\n", rc);
             }
         }
-
-        printf("Close: Setting fDatabase to nullptr\n");
         fDatabase = nullptr;
     }
-
-    printf("Close: Clearing path\n");
     fDatabasePath = "";
-    printf("Close: Completed\n");
 }
 
 
@@ -425,10 +415,15 @@ GameDatabase::GetRoom(int roomId, Room& room)
         if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
             room.imagePath = (const char*)sqlite3_column_text(stmt, 3);
 
-        room.northRoomId = sqlite3_column_int(stmt, 4);
-        room.southRoomId = sqlite3_column_int(stmt, 5);
-        room.eastRoomId = sqlite3_column_int(stmt, 6);
-        room.westRoomId = sqlite3_column_int(stmt, 7);
+        room.northRoomId = (sqlite3_column_type(stmt, 4) == SQLITE_NULL)
+            ? -1 : sqlite3_column_int(stmt, 4);
+        room.southRoomId = (sqlite3_column_type(stmt, 5) == SQLITE_NULL)
+            ? -1 : sqlite3_column_int(stmt, 5);
+        room.eastRoomId = (sqlite3_column_type(stmt, 6) == SQLITE_NULL)
+            ? -1 : sqlite3_column_int(stmt, 6);
+        room.westRoomId = (sqlite3_column_type(stmt, 7) == SQLITE_NULL)
+            ? -1 : sqlite3_column_int(stmt, 7);
+
         room.graphX = sqlite3_column_int(stmt, 8);
         room.graphY = sqlite3_column_int(stmt, 9);
 
@@ -572,4 +567,68 @@ GameDatabase::GetGameState(GameState& state)
 
     sqlite3_finalize(stmt);
     return B_ENTRY_NOT_FOUND;
+}
+
+
+status_t
+GameDatabase::UpdateGameState(const GameState& state)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    const char* sql = "UPDATE game_state SET current_room_id = ?, score = ?, "
+                      "health = ?, moves_count = ? WHERE id = 1;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare update statement: %s\n", sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, state.currentRoomId);
+    sqlite3_bind_int(stmt, 2, state.score);
+    sqlite3_bind_int(stmt, 3, state.health);
+    sqlite3_bind_int(stmt, 4, state.movesCount);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "Failed to update game state: %s\n", sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    return B_OK;
+}
+
+
+status_t
+GameDatabase::MoveToRoom(int newRoomId)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    // Simple version: just update room and increment moves
+    const char* sql = "UPDATE game_state SET current_room_id = ?, "
+                      "moves_count = moves_count + 1 WHERE id = 1;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare move statement: %s\n", sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, newRoomId);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "Failed to move to room: %s\n", sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    return B_OK;
 }

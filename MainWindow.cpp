@@ -47,12 +47,6 @@ MainWindow::MainWindow()
 
 	BMenuBar* menuBar = _BuildMenu();
 
-	/* BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
-		.Add(menuBar)
-		.AddGlue()
-		.End();
-	*/
-
 	BMessenger messenger(this);
 	fOpenPanel = new BFilePanel(B_OPEN_PANEL, &messenger, NULL, B_FILE_NODE, false);
 	fSavePanel = new BFilePanel(B_SAVE_PANEL, &messenger, NULL, B_FILE_NODE, false);
@@ -92,10 +86,10 @@ MainWindow::MainWindow()
 	fInventoryList->SetSelectionMessage(new BMessage('invS'));
 
 	// --- Action buttons ---
-	BButton* northButton = new BButton("north", "Go North", new BMessage('goN'));
-	BButton* southButton = new BButton("south", "Go South", new BMessage('goS'));
-	BButton* eastButton  = new BButton("east",  "Go East",  new BMessage('goE'));
-	BButton* westButton  = new BButton("west",  "Go West",  new BMessage('goW'));
+	fNorthBtn = new BButton("north", "Go North", new BMessage(MSG_MOVE_NORTH));
+	fSouthBtn = new BButton("south", "Go South", new BMessage(MSG_MOVE_SOUTH));
+	fEastBtn = new BButton("east",  "Go East",  new BMessage(MSG_MOVE_EAST));
+	fWestBtn = new BButton("west",  "Go West",  new BMessage(MSG_MOVE_WEST));
 	BButton* pickButton  = new BButton("pick",  "Pick Up",  new BMessage('pick'));
 	BButton* dropButton  = new BButton("drop",  "Drop",     new BMessage('drop'));
 	BButton* combineButton = new BButton("combine", "Combine", new BMessage('comb'));
@@ -112,10 +106,10 @@ MainWindow::MainWindow()
 			.Add(fRoomDescriptionView)
 			.AddGroup(B_HORIZONTAL, 10)
 				.AddGlue()
-				.Add(westButton)
-				.Add(northButton)
-				.Add(southButton)
-				.Add(eastButton)
+				.Add(fWestBtn)
+				.Add(fNorthBtn)
+				.Add(fSouthBtn)
+				.Add(fEastBtn)
 				.AddGlue()
 				.End()
 			.End()
@@ -141,9 +135,7 @@ MainWindow::MainWindow()
 		.End();
 
 	// Initialize database
-	printf("About to initialize database\n");
 	_InitializeDatabase(settings);
-	printf("Database initialization complete\n");
 }
 
 
@@ -172,9 +164,7 @@ MainWindow::MessageReceived(BMessage* message)
 			if (status == B_OK) {
 				fCurrentDatabasePath = path.Path();
 				fSaveMenuItem->SetEnabled(true);
-				BAlert* loadedMsg = new BAlert("Database loaded", "Database loaded", "OK");
-				loadedMsg->Go();
-				// Todo: update UI with room data
+				_LoadCurrentRoom();
 			} else {
 				BAlert* loadedMsg = new BAlert("Database error", "Error loading database", "OK");
 				loadedMsg->Go();
@@ -210,6 +200,26 @@ MainWindow::MessageReceived(BMessage* message)
 		{
 			fSavePanel->Show();
 		} break;
+
+		case MSG_MOVE_NORTH:
+        {
+            _MoveToRoom(fCurrentRoom.northRoomId);
+        } break;
+
+        case MSG_MOVE_SOUTH:
+        {
+            _MoveToRoom(fCurrentRoom.southRoomId);
+        } break;
+
+        case MSG_MOVE_EAST:
+        {
+            _MoveToRoom(fCurrentRoom.eastRoomId);
+        } break;
+
+        case MSG_MOVE_WEST:
+        {
+            _MoveToRoom(fCurrentRoom.westRoomId);
+        } break;
 
 		default:
 		{
@@ -340,7 +350,7 @@ MainWindow::_InitializeDatabase(BMessage& settings)
 			// Database exists, try to open
 			status = fDatabase->Open(savedPath);
 			fSaveMenuItem->SetEnabled(true);
-			// Todo: Update UI with room data
+			_LoadCurrentRoom();
 			return;
 		}
 	}
@@ -363,7 +373,7 @@ MainWindow::_InitializeDatabase(BMessage& settings)
 			if (status == B_OK) {
 				fCurrentDatabasePath = defaultDbPath.Path();
 				fSaveMenuItem->SetEnabled(true);
-				// Todo: Update UI with room data
+				_LoadCurrentRoom();
 				return;
 			}
 		}
@@ -373,7 +383,7 @@ MainWindow::_InitializeDatabase(BMessage& settings)
 		if (status == B_OK) {
 			fCurrentDatabasePath = defaultDbPath.Path();
 			fSaveMenuItem->SetEnabled(true);
-			// Todo: Update UI with room data
+			_LoadCurrentRoom();
 			return;
 		}
 	}
@@ -390,4 +400,105 @@ MainWindow::_UpdateStatusBar(const GameState& state)
 	fHealthView->SetText(BString().SetToFormat("Health: %d", state.health));
 	fScoreView->SetText(BString().SetToFormat("Score: %d", state.score));
 	fMovesView->SetText(BString().SetToFormat("Moves: %d", state.movesCount));
+}
+
+
+void
+MainWindow::_LoadCurrentRoom()
+{
+	if (!fDatabase || !fDatabase->IsOpen())
+		return;
+
+	GameState state;
+	if (fDatabase->GetGameState(state) != B_OK)
+		return;
+
+	if (fDatabase->GetRoom(state.currentRoomId, fCurrentRoom) != B_OK)
+		return;
+
+	// Get items in room
+    std::vector<Item> roomItems;
+    if (fDatabase->GetItemsInRoom(state.currentRoomId, roomItems) != B_OK) {
+        fprintf(stderr, "Failed to load items for room %d\n", state.currentRoomId);
+        // Continue anyway, just no items
+    }
+
+	// Update room name and description
+	fRoomNameView->SetText(fCurrentRoom.name);
+
+	BString fullDescription = fCurrentRoom.description;
+
+	// Append item descriptions
+    for (size_t i = 0; i < roomItems.size(); i++) {
+        if (roomItems[i].roomDescription.Length() > 0) {
+            fullDescription << "\n\n" << roomItems[i].roomDescription;
+        }
+    }
+
+	fRoomDescriptionView->SetText(fullDescription.String());
+
+	// Optional: display image placeholder or file name
+	if (!fCurrentRoom.imagePath.IsEmpty())
+		fRoomImageView->SetText(fCurrentRoom.imagePath);
+	else
+		fRoomImageView->SetText("📜 [No image]");
+
+	// Update player stats
+	_UpdateStatusBar(state);
+
+	// Update inventory too (so it stays in sync)
+	_LoadInventory();
+
+	// Update direction buttons
+	_UpdateDirectionButtons();
+}
+
+
+void
+MainWindow::_LoadInventory()
+{
+	if (!fDatabase->IsOpen())
+		return;
+
+	fInventoryList->MakeEmpty();
+
+	std::vector<Item> items;
+	if (fDatabase->GetInventoryItems(items) != B_OK)
+		return;
+
+	for (const auto& item : items) {
+		if (item.isVisible)
+			fInventoryList->AddItem(new BStringItem(item.name));
+	}
+}
+
+
+void
+MainWindow::_UpdateDirectionButtons()
+{
+	fNorthBtn->SetEnabled(fCurrentRoom.northRoomId != -1);
+	fSouthBtn->SetEnabled(fCurrentRoom.southRoomId!= -1);
+	fEastBtn->SetEnabled(fCurrentRoom.eastRoomId != -1);
+	fWestBtn->SetEnabled(fCurrentRoom.westRoomId != -1);
+}
+
+
+void
+MainWindow::_MoveToRoom(int roomId)
+{
+    if (!fDatabase || !fDatabase->IsOpen())
+        return;
+
+    // Update the database
+    status_t status = fDatabase->MoveToRoom(roomId);
+    if (status != B_OK) {
+        fprintf(stderr, "Failed to move to room %d\n", roomId);
+        // TODO: Show error alert to user
+        return;
+    }
+
+    // Reload the current room
+    _LoadCurrentRoom();
+
+    printf("Moved to room %d\n", roomId);
 }

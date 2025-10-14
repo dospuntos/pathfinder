@@ -7,6 +7,7 @@
 
 
 #include "GameDatabase.h"
+#include <Button.h>
 #include <FilePanel.h>
 #include <MenuBar.h>
 #include <MenuItem.h>
@@ -17,6 +18,13 @@
 #include <ListView.h>
 
 class GameDatabase;
+
+enum {
+	MSG_MOVE_NORTH = 'movN',
+	MSG_MOVE_SOUTH = 'movS',
+	MSG_MOVE_EAST  = 'movE',
+	MSG_MOVE_WEST  = 'movW'
+};
 
 class MainWindow : public BWindow
 {
@@ -36,21 +44,30 @@ private:
 			BString			fCurrentDatabasePath;
 
 			void			_InitializeDatabase(BMessage& settings);
-			void			_UpdateStatusBar(const GameState& state);
+			void 			_LoadCurrentRoom();
+			void 			_LoadInventory();
+			void 			_UpdateStatusBar(const GameState& state);
+			void 			_UpdateDirectionButtons();
+			void 			_MoveToRoom(int roomId);
+			Room			fCurrentRoom;
 
 			BMenuItem*		fSaveMenuItem;
 			BFilePanel*		fOpenPanel;
 			BFilePanel*		fSavePanel;
 
-			BStringView* fRoomImageView;
-			BStringView* fRoomNameView;
-			BTextView* fRoomDescriptionView;
-			BListView* fInventoryList;
-			BScrollView* fInventoryScroll;
+			BStringView* 	fRoomImageView;
+			BStringView* 	fRoomNameView;
+			BTextView* 		fRoomDescriptionView;
+			BListView* 		fInventoryList;
+			BScrollView* 	fInventoryScroll;
+			BButton* 		fNorthBtn;
+			BButton* 		fSouthBtn;
+			BButton* 		fEastBtn;
+			BButton* 		fWestBtn;
 
-			BStringView* fHealthView;
-			BStringView* fScoreView;
-			BStringView* fMovesView;
+			BStringView* 	fHealthView;
+			BStringView* 	fScoreView;
+			BStringView* 	fMovesView;
 };
 
 #endif
