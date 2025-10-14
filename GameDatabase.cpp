@@ -394,3 +394,182 @@ UPDATE game_metadata SET value = 'Pathfinder' WHERE key = 'author';
 
     return status;
 }
+
+
+// Add to GameDatabase.cpp
+
+status_t
+GameDatabase::GetRoom(int roomId, Room& room)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    const char* sql = "SELECT id, name, description, image_path, "
+                      "north_room_id, south_room_id, east_room_id, west_room_id, "
+                      "graph_x, graph_y FROM rooms WHERE id = ?;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare room query: %s\n", sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, roomId);
+
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        room.id = sqlite3_column_int(stmt, 0);
+        room.name = (const char*)sqlite3_column_text(stmt, 1);
+        room.description = (const char*)sqlite3_column_text(stmt, 2);
+
+        if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+            room.imagePath = (const char*)sqlite3_column_text(stmt, 3);
+
+        room.northRoomId = sqlite3_column_int(stmt, 4);
+        room.southRoomId = sqlite3_column_int(stmt, 5);
+        room.eastRoomId = sqlite3_column_int(stmt, 6);
+        room.westRoomId = sqlite3_column_int(stmt, 7);
+        room.graphX = sqlite3_column_int(stmt, 8);
+        room.graphY = sqlite3_column_int(stmt, 9);
+
+        sqlite3_finalize(stmt);
+        return B_OK;
+    }
+
+    sqlite3_finalize(stmt);
+    return B_ENTRY_NOT_FOUND;
+}
+
+
+status_t
+GameDatabase::GetItemsInRoom(int roomId, std::vector<Item>& items)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    items.clear();
+
+    const char* sql = "SELECT i.id, i.name, i.description, i.room_description, "
+                      "i.image_path, i.can_take, i.can_use, i.can_combine, "
+                      "i.use_message, i.is_visible "
+                      "FROM items i "
+                      "JOIN item_locations il ON i.id = il.item_id "
+                      "WHERE il.room_id = ? AND i.is_visible = 1;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare items query: %s\n", sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, roomId);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        Item item;
+        item.id = sqlite3_column_int(stmt, 0);
+        item.name = (const char*)sqlite3_column_text(stmt, 1);
+        item.description = (const char*)sqlite3_column_text(stmt, 2);
+
+        if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+            item.roomDescription = (const char*)sqlite3_column_text(stmt, 3);
+        if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+            item.imagePath = (const char*)sqlite3_column_text(stmt, 4);
+
+        item.canTake = sqlite3_column_int(stmt, 5) != 0;
+        item.canUse = sqlite3_column_int(stmt, 6) != 0;
+        item.canCombine = sqlite3_column_int(stmt, 7) != 0;
+
+        if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
+            item.useMessage = (const char*)sqlite3_column_text(stmt, 8);
+
+        item.isVisible = sqlite3_column_int(stmt, 9) != 0;
+
+        items.push_back(item);
+    }
+
+    sqlite3_finalize(stmt);
+    return B_OK;
+}
+
+
+status_t
+GameDatabase::GetInventoryItems(std::vector<Item>& items)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    items.clear();
+
+    const char* sql = "SELECT i.id, i.name, i.description, i.room_description, "
+                      "i.image_path, i.can_take, i.can_use, i.can_combine, "
+                      "i.use_message, i.is_visible "
+                      "FROM items i "
+                      "JOIN item_locations il ON i.id = il.item_id "
+                      "WHERE il.room_id IS NULL;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare inventory query: %s\n", sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        Item item;
+        item.id = sqlite3_column_int(stmt, 0);
+        item.name = (const char*)sqlite3_column_text(stmt, 1);
+        item.description = (const char*)sqlite3_column_text(stmt, 2);
+
+        if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
+            item.roomDescription = (const char*)sqlite3_column_text(stmt, 3);
+        if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+            item.imagePath = (const char*)sqlite3_column_text(stmt, 4);
+
+        item.canTake = sqlite3_column_int(stmt, 5) != 0;
+        item.canUse = sqlite3_column_int(stmt, 6) != 0;
+        item.canCombine = sqlite3_column_int(stmt, 7) != 0;
+
+        if (sqlite3_column_type(stmt, 8) != SQLITE_NULL)
+            item.useMessage = (const char*)sqlite3_column_text(stmt, 8);
+
+        item.isVisible = sqlite3_column_int(stmt, 9) != 0;
+
+        items.push_back(item);
+    }
+
+    sqlite3_finalize(stmt);
+    return B_OK;
+}
+
+
+status_t
+GameDatabase::GetGameState(GameState& state)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    const char* sql = "SELECT current_room_id, score, health, moves_count, start_time "
+                      "FROM game_state WHERE id = 1;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare game state query: %s\n", sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        state.currentRoomId = sqlite3_column_int(stmt, 0);
+        state.score = sqlite3_column_int(stmt, 1);
+        state.health = sqlite3_column_int(stmt, 2);
+        state.movesCount = sqlite3_column_int(stmt, 3);
+        state.startTime = sqlite3_column_int(stmt, 4);
+
+        sqlite3_finalize(stmt);
+        return B_OK;
+    }
+
+    sqlite3_finalize(stmt);
+    return B_ENTRY_NOT_FOUND;
+}

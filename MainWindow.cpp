@@ -18,6 +18,8 @@
 #include <MenuBar.h>
 #include <Path.h>
 #include <View.h>
+#include <ScrollView.h>
+#include <Button.h>
 
 #include <cstdio>
 
@@ -45,10 +47,11 @@ MainWindow::MainWindow()
 
 	BMenuBar* menuBar = _BuildMenu();
 
-	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
+	/* BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 		.Add(menuBar)
 		.AddGlue()
 		.End();
+	*/
 
 	BMessenger messenger(this);
 	fOpenPanel = new BFilePanel(B_OPEN_PANEL, &messenger, NULL, B_FILE_NODE, false);
@@ -60,9 +63,82 @@ MainWindow::MainWindow()
 	BRect frame;
 	if (settings.FindRect("main_window_rect", &frame) == B_OK) {
 		MoveTo(frame.LeftTop());
-		ResizeTo(frame.Width(), Bounds().Height());
+		ResizeTo(frame.Width(), frame.Height());
 	}
 	MoveOnScreen();
+
+	// --- UI Elements ---
+
+	// Room image (placeholder for now)
+	fRoomImageView = new BStringView("room_image_placeholder", "📜 [No image]");
+	fRoomImageView->SetFont(be_bold_font);
+	fRoomImageView->SetAlignment(B_ALIGN_CENTER);
+
+	// Room name
+	fRoomNameView = new BStringView("room_name", "Room Name");
+	fRoomNameView->SetFont(be_bold_font);
+	fRoomNameView->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
+
+	// Room description
+	fRoomDescriptionView = new BTextView("room_description");
+	fRoomDescriptionView->MakeEditable(false);
+	fRoomDescriptionView->SetWordWrap(true);
+	fRoomDescriptionView->SetExplicitMinSize(BSize(250, 150));
+
+	// Inventory section
+	fInventoryList = new BListView("inventory_list");
+	fInventoryScroll = new BScrollView("inventory_scroll", fInventoryList,
+		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
+	fInventoryList->SetSelectionMessage(new BMessage('invS'));
+
+	// --- Action buttons ---
+	BButton* northButton = new BButton("north", "Go North", new BMessage('goN'));
+	BButton* southButton = new BButton("south", "Go South", new BMessage('goS'));
+	BButton* eastButton  = new BButton("east",  "Go East",  new BMessage('goE'));
+	BButton* westButton  = new BButton("west",  "Go West",  new BMessage('goW'));
+	BButton* pickButton  = new BButton("pick",  "Pick Up",  new BMessage('pick'));
+	BButton* dropButton  = new BButton("drop",  "Drop",     new BMessage('drop'));
+	BButton* combineButton = new BButton("combine", "Combine", new BMessage('comb'));
+
+	// --- Layout ---
+	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
+	.Add(menuBar)
+	.AddGroup(B_HORIZONTAL, 10)
+		.SetInsets(10, 10, 10, 10)
+		// --- Left side: room content ---
+		.AddGroup(B_VERTICAL, 5, 1.0f)
+			.Add(fRoomImageView)
+			.Add(fRoomNameView)
+			.Add(fRoomDescriptionView)
+			.AddGroup(B_HORIZONTAL, 10)
+				.AddGlue()
+				.Add(westButton)
+				.Add(northButton)
+				.Add(southButton)
+				.Add(eastButton)
+				.AddGlue()
+				.End()
+			.End()
+		// --- Right side: inventory and actions ---
+		.AddGroup(B_VERTICAL, 5, 0.3f)
+			.Add(new BStringView("inv_label", "Inventory:"))
+			.Add(fInventoryScroll, 1.0f)
+			.AddGroup(B_VERTICAL, 5)
+				.Add(pickButton)
+				.Add(dropButton)
+				.Add(combineButton)
+				.End()
+			.End()
+		.End()
+	// --- Status bar at bottom ---
+	.AddGroup(B_HORIZONTAL, 10)
+		.SetInsets(10, 0, 10, 10)
+		.Add(new BStringView("status_label", "Status:"))
+		.AddGlue()
+		.Add(fHealthView = new BStringView("health", "Health: 100"))
+		.Add(fScoreView = new BStringView("score", "Score: 0"))
+		.Add(fMovesView = new BStringView("moves", "Moves: 0"))
+		.End();
 
 	// Initialize database
 	printf("About to initialize database\n");
@@ -264,11 +340,9 @@ MainWindow::_InitializeDatabase(BMessage& settings)
 			// Database exists, try to open
 			status = fDatabase->Open(savedPath);
 			fSaveMenuItem->SetEnabled(true);
-			(new BAlert("Database loaded", "Database loaded from settings", "OK"))->Go();
 			// Todo: Update UI with room data
 			return;
 		}
-		(new BAlert("Failed database", "Failed to open saved database, falling back to default", "OK"))->Go();
 	}
 
 	// Try to load default database from settings dir
@@ -289,11 +363,9 @@ MainWindow::_InitializeDatabase(BMessage& settings)
 			if (status == B_OK) {
 				fCurrentDatabasePath = defaultDbPath.Path();
 				fSaveMenuItem->SetEnabled(true);
-				(new BAlert("Default database", "Default database loaded", "OK"))->Go();
 				// Todo: Update UI with room data
 				return;
 			}
-			(new BAlert("Failed database", "Failed to open default database, will create", "OK"))->Go();
 		}
 
 		// Create default database
@@ -301,7 +373,6 @@ MainWindow::_InitializeDatabase(BMessage& settings)
 		if (status == B_OK) {
 			fCurrentDatabasePath = defaultDbPath.Path();
 			fSaveMenuItem->SetEnabled(true);
-			(new BAlert("New database", "Created new default database.", "OK"))->Go();
 			// Todo: Update UI with room data
 			return;
 		}
@@ -310,4 +381,13 @@ MainWindow::_InitializeDatabase(BMessage& settings)
 	// If we get here, something went wrong
 	(new BAlert("Failed database", "Failed to initialize database", "OK"))->Go();
 	// Todo: Show better error to user.
+}
+
+
+void
+MainWindow::_UpdateStatusBar(const GameState& state)
+{
+	fHealthView->SetText(BString().SetToFormat("Health: %d", state.health));
+	fScoreView->SetText(BString().SetToFormat("Score: %d", state.score));
+	fMovesView->SetText(BString().SetToFormat("Moves: %d", state.movesCount));
 }
