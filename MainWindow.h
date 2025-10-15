@@ -32,7 +32,9 @@ enum {
 	MSG_ITEM_SELECTED = 'SItm',
 	MSG_INV_ITEM_SELECTED = 'IItm',
 	MSG_TAKE_ITEM  = 'TItm',
-	MSG_DROP_ITEM = 'DItm'
+	MSG_DROP_ITEM = 'DItm',
+	MSG_EXAMINE_ITEM = 'EItm',
+	MSG_EXAMINE_INV_ITEM = 'EInv'
 };
 
 class MainWindow : public BWindow
@@ -65,9 +67,13 @@ private:
 			std::vector<Item> fCurrentRoomItems;
 			std::vector<Item> fInventoryItems;
 			BListView* fItemsListView;
+			BListView* 		fInventoryList;
+			BScrollView* 	fInventoryScroll;
 			BButton* fTakeItemBtn;
 			BButton* fDropItemBtn;
 			BButton* fUseItemBtn;
+			BButton* fExamineItemBtn;
+			BButton* fExamineInvItemBtn;
 
 			// Structure to track selected item
 			Item fSelectedItem;
@@ -80,8 +86,7 @@ private:
 			BStringView* 	fRoomImageView;
 			BStringView* 	fRoomNameView;
 			BTextView* 		fRoomDescriptionView;
-			BListView* 		fInventoryList;
-			BScrollView* 	fInventoryScroll;
+
 			BButton* 		fNorthBtn;
 			BButton* 		fSouthBtn;
 			BButton* 		fEastBtn;

@@ -84,6 +84,7 @@ MainWindow::MainWindow()
 	fInventoryScroll = new BScrollView("inventory_scroll", fInventoryList,
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
 	fInventoryList->SetSelectionMessage(new BMessage(MSG_INV_ITEM_SELECTED));
+	fInventoryList->SetInvocationMessage(new BMessage(MSG_EXAMINE_INV_ITEM));
 
 	// --- Action buttons ---
 	fNorthBtn = new BButton("north", "Go North", new BMessage(MSG_MOVE_NORTH));
@@ -92,10 +93,13 @@ MainWindow::MainWindow()
 	fWestBtn = new BButton("west",  "Go West",  new BMessage(MSG_MOVE_WEST));
 	fDropItemBtn = new BButton("drop", "Drop", new BMessage(MSG_DROP_ITEM));
 	fUseItemBtn = new BButton("use", "Use", new BMessage(MSG_DROP_ITEM));
+	fExamineItemBtn = new BButton("examine", "Examine", new BMessage(MSG_EXAMINE_ITEM));
+	fExamineInvItemBtn = new BButton("examineInv", "Examine", new BMessage(MSG_EXAMINE_INV_ITEM));
 	BButton* combineButton = new BButton("combine", "Combine", new BMessage('comb'));
 
 	fItemsListView = new BListView("items_list");
 	fItemsListView->SetSelectionMessage(new BMessage(MSG_ITEM_SELECTED));
+	fItemsListView->SetInvocationMessage(new BMessage(MSG_EXAMINE_ITEM));
 
 	fTakeItemBtn = new BButton("take", "Take Item", new BMessage(MSG_TAKE_ITEM));
 	fTakeItemBtn->SetEnabled(false);
@@ -123,10 +127,14 @@ MainWindow::MainWindow()
 		.AddGroup(B_VERTICAL, 5, 0.3f)
 			.Add(new BStringView("items_label", "Items in room:"))
 			.Add(new BScrollView("items_scroll", fItemsListView, 0, false, true))
-			.Add(fTakeItemBtn)
+			.AddGroup(B_HORIZONTAL, 5)
+				.Add(fExamineItemBtn)
+				.Add(fTakeItemBtn)
+				.End()
 			.Add(new BStringView("inv_label", "Inventory:"))
 			.Add(fInventoryScroll, 1.0f)
 			.AddGroup(B_HORIZONTAL, 5)
+				.Add(fExamineInvItemBtn)
 				.Add(fDropItemBtn)
 				.Add(fUseItemBtn)
 				.Add(combineButton)
@@ -233,15 +241,41 @@ MainWindow::MessageReceived(BMessage* message)
 		case MSG_ITEM_SELECTED:
 		{
 			int32 index = fItemsListView->CurrentSelection();
-            fTakeItemBtn->SetEnabled(index >= 0 &&
-                                     index < (int32)fCurrentRoomItems.size());
+			bool btnState = index >= 0 &&
+							index < (int32)fCurrentRoomItems.size();
+            fTakeItemBtn->SetEnabled(btnState);
+			fExamineItemBtn->SetEnabled(btnState);
 		} break;
 
 		case MSG_INV_ITEM_SELECTED:
 		{
 			int32 index = fInventoryList->CurrentSelection();
-            fDropItemBtn->SetEnabled(index >= 0 &&
-                                     index < (int32)fInventoryItems.size());
+			bool btnState = index >= 0 &&
+							index < (int32)fInventoryItems.size();
+            fDropItemBtn->SetEnabled(btnState);
+			fExamineInvItemBtn->SetEnabled(btnState);
+		} break;
+
+		case MSG_EXAMINE_ITEM:
+		{
+			int32 index = fItemsListView->CurrentSelection();
+			if (index >= 0 && index < (int32)fCurrentRoomItems.size()) {
+				Item& item = fCurrentRoomItems[index];
+				BString message;
+				message << item.name << "\n\n" << item.description;
+				(new BAlert("Item Details", message.String(), "OK"))->Go();
+			}
+		} break;
+
+		case MSG_EXAMINE_INV_ITEM:
+		{
+			int32 index = fInventoryList->CurrentSelection();
+			if (index >= 0 && index < (int32)fInventoryItems.size()) {
+				Item& item = fInventoryItems[index];
+				BString message;
+				message << item.name << "\n\n" << item.description;
+				(new BAlert("Item Details", message.String(), "OK"))->Go();
+			}
 		} break;
 
 		case MSG_TAKE_ITEM:
@@ -525,6 +559,8 @@ MainWindow::_LoadInventory()
 
 	fDropItemBtn->SetEnabled(false);
 	fUseItemBtn->SetEnabled(false);
+	fExamineItemBtn->SetEnabled(false);
+	fExamineInvItemBtn->SetEnabled(false);
 }
 
 
