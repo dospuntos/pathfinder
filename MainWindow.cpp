@@ -92,7 +92,7 @@ MainWindow::MainWindow()
 	fEastBtn = new BButton("east",  "Go East",  new BMessage(MSG_MOVE_EAST));
 	fWestBtn = new BButton("west",  "Go West",  new BMessage(MSG_MOVE_WEST));
 	fDropItemBtn = new BButton("drop", "Drop", new BMessage(MSG_DROP_ITEM));
-	fUseItemBtn = new BButton("use", "Use", new BMessage(MSG_DROP_ITEM));
+	fUseItemBtn = new BButton("use", "Use", new BMessage(MSG_USE_ITEM));
 	fExamineItemBtn = new BButton("examine", "Examine", new BMessage(MSG_EXAMINE_ITEM));
 	fExamineInvItemBtn = new BButton("examineInv", "Examine", new BMessage(MSG_EXAMINE_INV_ITEM));
 	BButton* combineButton = new BButton("combine", "Combine", new BMessage('comb'));
@@ -254,6 +254,7 @@ MainWindow::MessageReceived(BMessage* message)
 							index < (int32)fInventoryItems.size();
             fDropItemBtn->SetEnabled(btnState);
 			fExamineInvItemBtn->SetEnabled(btnState);
+			fUseItemBtn->SetEnabled(btnState);
 		} break;
 
 		case MSG_EXAMINE_ITEM:
@@ -293,6 +294,15 @@ MainWindow::MessageReceived(BMessage* message)
 				_DropItem(fInventoryItems[index].id);
 			}
 		} break;
+
+		case MSG_USE_ITEM:
+		{
+			int32 index = fInventoryList->CurrentSelection();
+			if (index >= 0 && index < (int32)fInventoryItems.size()) {
+				_UseItem(fInventoryItems[index].id);
+			}
+		} break;
+
 
 		default:
 		{
@@ -629,4 +639,123 @@ MainWindow::_DropItem(int itemId)
 
 	// Refresh the room display
 	_LoadCurrentRoom();
+}
+
+
+void
+MainWindow::_UseItem(int itemId)
+{
+    if (!fDatabase || !fDatabase->IsOpen())
+        return;
+
+    GameState state;
+    fDatabase->GetGameState(state);
+
+    // Check if there's an action for this item in this room
+    std::vector<ItemAction> actions;
+    status_t status = fDatabase->GetItemActions(itemId, state.currentRoomId, actions);
+
+    if (status == B_OK && actions.size() > 0) {
+        // Filter out already completed actions
+        bool foundAction = false;
+        for (size_t i = 0; i < actions.size(); i++) {
+            if (!fDatabase->IsActionCompleted(actions[i].id)) {
+                _ExecuteItemAction(actions[i]);
+                foundAction = true;
+                break;  // Execute only the first uncompleted action
+            }
+        }
+
+        if (!foundAction) {
+            (new BAlert("Use Item", "You've already used that here.", "OK"))->Go();
+        }
+    } else {
+        // No action defined, show generic message
+        Item* item = nullptr;
+        for (size_t i = 0; i < fInventoryItems.size(); i++) {
+            if (fInventoryItems[i].id == itemId) {
+                item = &fInventoryItems[i];
+                break;
+            }
+        }
+
+        BString message;
+        if (item && item->useMessage.Length() > 0) {
+            message = item->useMessage;
+        } else {
+            message = "You can't use that here.";
+        }
+
+        (new BAlert("Use Item", message.String(), "OK"))->Go();
+    }
+}
+
+
+void
+MainWindow::_ExecuteItemAction(const ItemAction& action)
+{
+    printf("Executing action: %s\n", action.actionType.String());
+
+    bool success = false;
+    BString resultMessage = action.successMessage;
+
+    if (action.actionType == "reveal_item") {
+        // Make a hidden item visible
+        if (action.targetItemId > 0) {
+            status_t status = fDatabase->SetItemVisibility(action.targetItemId, true);
+            if (status == B_OK) {
+                success = true;
+                if (resultMessage.Length() == 0)
+                    resultMessage = "Something new has been revealed!";
+            }
+        }
+    }
+    else if (action.actionType == "remove_item") {
+        // Remove an item from the game
+        if (action.targetItemId > 0) {
+            status_t status = fDatabase->RemoveItemFromRoom(action.targetItemId);
+            if (status == B_OK) {
+                success = true;
+                if (resultMessage.Length() == 0)
+                    resultMessage = "The item has been removed.";
+            }
+        }
+    }
+    else if (action.actionType == "unlock_exit") {
+        // Remove exit condition (unlock a door)
+        if (action.targetDirection.Length() > 0) {
+            // You'll need to implement this in GameDatabase
+            status_t status = fDatabase->UnlockExit(fCurrentRoom.id,
+                                                     action.targetDirection.String());
+            if (status == B_OK) {
+                success = true;
+                if (resultMessage.Length() == 0)
+                    resultMessage = "The way is now open!";
+            }
+        }
+    }
+    else {
+        resultMessage = "Unknown action type.";
+    }
+
+    if (success) {
+        // Mark action as completed
+        fDatabase->MarkActionCompleted(action.id);
+
+        // Consume item if needed
+        if (action.consumesItem) {
+            fDatabase->RemoveItemFromRoom(action.itemId);
+            resultMessage << "\n\nThe item was consumed.";
+        }
+
+        // Show success message
+        if (resultMessage.Length() > 0) {
+            (new BAlert("Success", resultMessage.String(), "OK"))->Go();
+        }
+
+        // Refresh UI
+        _LoadCurrentRoom();
+    } else {
+        (new BAlert("Error", "Failed to execute action.", "OK"))->Go();
+    }
 }

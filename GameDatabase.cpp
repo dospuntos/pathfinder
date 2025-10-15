@@ -695,3 +695,206 @@ GameDatabase::MoveItemToRoom(int itemId, int roomId)
 
 	return B_OK;
 }
+
+
+status_t
+GameDatabase::GetItemActions(int itemId, int roomId, std::vector<ItemAction>& actions)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    actions.clear();
+
+    // Get actions that work in this specific room OR any room (room_id IS NULL)
+    const char* sql = "SELECT id, item_id, room_id, action_type, target_item_id, "
+                      "target_direction, success_message, consumes_item "
+                      "FROM item_actions "
+                      "WHERE item_id = ? AND (room_id = ? OR room_id IS NULL);";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare item actions query: %s\n",
+                sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, itemId);
+    sqlite3_bind_int(stmt, 2, roomId);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        ItemAction action;
+        action.id = sqlite3_column_int(stmt, 0);
+        action.itemId = sqlite3_column_int(stmt, 1);
+
+        if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+            action.roomId = sqlite3_column_int(stmt, 2);
+
+        action.actionType = (const char*)sqlite3_column_text(stmt, 3);
+
+        if (sqlite3_column_type(stmt, 4) != SQLITE_NULL)
+            action.targetItemId = sqlite3_column_int(stmt, 4);
+
+        if (sqlite3_column_type(stmt, 5) != SQLITE_NULL)
+            action.targetDirection = (const char*)sqlite3_column_text(stmt, 5);
+
+        if (sqlite3_column_type(stmt, 6) != SQLITE_NULL)
+            action.successMessage = (const char*)sqlite3_column_text(stmt, 6);
+
+        action.consumesItem = sqlite3_column_int(stmt, 7) != 0;
+
+        actions.push_back(action);
+    }
+
+    sqlite3_finalize(stmt);
+    return B_OK;
+}
+
+
+status_t
+GameDatabase::MarkActionCompleted(int actionId)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    const char* sql = "INSERT OR IGNORE INTO completed_actions (action_id) VALUES (?);";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare mark action statement: %s\n",
+                sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, actionId);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "Failed to mark action completed: %s\n",
+                sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    return B_OK;
+}
+
+
+bool
+GameDatabase::IsActionCompleted(int actionId)
+{
+    if (!fDatabase)
+        return false;
+
+    const char* sql = "SELECT 1 FROM completed_actions WHERE action_id = ?;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK)
+        return false;
+
+    sqlite3_bind_int(stmt, 1, actionId);
+
+    bool completed = (sqlite3_step(stmt) == SQLITE_ROW);
+    sqlite3_finalize(stmt);
+
+    return completed;
+}
+
+
+status_t
+GameDatabase::SetItemVisibility(int itemId, bool visible)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    const char* sql = "UPDATE items SET is_visible = ? WHERE id = ?;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare visibility statement: %s\n",
+                sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, visible ? 1 : 0);
+    sqlite3_bind_int(stmt, 2, itemId);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "Failed to set item visibility: %s\n",
+                sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    return B_OK;
+}
+
+
+status_t
+GameDatabase::RemoveItemFromRoom(int itemId)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    // Remove from item_locations (effectively removes from game)
+    const char* sql = "DELETE FROM item_locations WHERE item_id = ?;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare remove item statement: %s\n",
+                sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, itemId);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "Failed to remove item: %s\n",
+                sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    return B_OK;
+}
+
+
+status_t
+GameDatabase::UnlockExit(int roomId, const char* direction)
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    // Remove the exit condition
+    const char* sql = "DELETE FROM exit_conditions WHERE room_id = ? AND direction = ?;";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare unlock exit statement: %s\n",
+                sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    sqlite3_bind_int(stmt, 1, roomId);
+    sqlite3_bind_text(stmt, 2, direction, -1, SQLITE_TRANSIENT);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        fprintf(stderr, "Failed to unlock exit: %s\n", sqlite3_errmsg(fDatabase));
+        return B_ERROR;
+    }
+
+    return B_OK;
+}

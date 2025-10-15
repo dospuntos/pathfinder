@@ -51,7 +51,22 @@ struct GameState {
                   movesCount(0), startTime(0) {}
 };
 
+struct ItemAction {
+    int id;
+    int itemId;
+    int roomId;  // 0 means works in any room
+    BString actionType;  // 'reveal_item', 'remove_item', 'unlock_exit'
+    int targetItemId;
+    BString targetDirection;
+    BString successMessage;
+    bool consumesItem;
+
+    ItemAction() : id(0), itemId(0), roomId(0), targetItemId(0),
+                   consumesItem(false) {}
+};
+
 class GameDatabase {
+
 public:
     GameDatabase();
     ~GameDatabase();
@@ -72,6 +87,12 @@ public:
 	status_t MoveToRoom(int newRoomId);
 	status_t MoveItemToInventory(int itemId);
 	status_t MoveItemToRoom(int itemId, int roomId);
+	status_t GetItemActions(int itemId, int roomId, std::vector<ItemAction>& actions);
+	status_t MarkActionCompleted(int actionId);
+	bool IsActionCompleted(int actionId);
+	status_t SetItemVisibility(int itemId, bool visible);
+	status_t RemoveItemFromRoom(int itemId);
+	status_t UnlockExit(int roomId, const char* direction);
 
     // Get the SQLite database handle (for future advanced queries)
     sqlite3* Handle() const { return fDatabase; }

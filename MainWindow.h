@@ -34,7 +34,8 @@ enum {
 	MSG_TAKE_ITEM  = 'TItm',
 	MSG_DROP_ITEM = 'DItm',
 	MSG_EXAMINE_ITEM = 'EItm',
-	MSG_EXAMINE_INV_ITEM = 'EInv'
+	MSG_EXAMINE_INV_ITEM = 'EInv',
+	MSG_USE_ITEM = 'Uitm'
 };
 
 class MainWindow : public BWindow
@@ -62,6 +63,8 @@ private:
 			void 			_MoveToRoom(int roomId);
 			void			_TakeItem(int itemId);
 			void			_DropItem(int itemId);
+			void 			_UseItem(int itemId);
+			void 			_ExecuteItemAction(const ItemAction& action);
 
 			Room			fCurrentRoom;
 			std::vector<Item> fCurrentRoomItems;
