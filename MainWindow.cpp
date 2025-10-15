@@ -83,15 +83,15 @@ MainWindow::MainWindow()
 	fInventoryList = new BListView("inventory_list");
 	fInventoryScroll = new BScrollView("inventory_scroll", fInventoryList,
 		B_WILL_DRAW | B_FRAME_EVENTS, false, true);
-	fInventoryList->SetSelectionMessage(new BMessage('invS'));
+	fInventoryList->SetSelectionMessage(new BMessage(MSG_INV_ITEM_SELECTED));
 
 	// --- Action buttons ---
 	fNorthBtn = new BButton("north", "Go North", new BMessage(MSG_MOVE_NORTH));
 	fSouthBtn = new BButton("south", "Go South", new BMessage(MSG_MOVE_SOUTH));
 	fEastBtn = new BButton("east",  "Go East",  new BMessage(MSG_MOVE_EAST));
 	fWestBtn = new BButton("west",  "Go West",  new BMessage(MSG_MOVE_WEST));
-	BButton* pickButton  = new BButton("pick",  "Pick Up",  new BMessage('pick'));
-	BButton* dropButton  = new BButton("drop",  "Drop",     new BMessage('drop'));
+	fDropItemBtn = new BButton("drop", "Drop", new BMessage(MSG_DROP_ITEM));
+	fUseItemBtn = new BButton("use", "Use", new BMessage(MSG_DROP_ITEM));
 	BButton* combineButton = new BButton("combine", "Combine", new BMessage('comb'));
 
 	fItemsListView = new BListView("items_list");
@@ -127,7 +127,8 @@ MainWindow::MainWindow()
 			.Add(new BStringView("inv_label", "Inventory:"))
 			.Add(fInventoryScroll, 1.0f)
 			.AddGroup(B_HORIZONTAL, 5)
-				.Add(dropButton)
+				.Add(fDropItemBtn)
+				.Add(fUseItemBtn)
 				.Add(combineButton)
 				.End()
 			.End()
@@ -236,12 +237,27 @@ MainWindow::MessageReceived(BMessage* message)
                                      index < (int32)fCurrentRoomItems.size());
 		} break;
 
+		case MSG_INV_ITEM_SELECTED:
+		{
+			int32 index = fInventoryList->CurrentSelection();
+            fDropItemBtn->SetEnabled(index >= 0 &&
+                                     index < (int32)fInventoryItems.size());
+		} break;
+
 		case MSG_TAKE_ITEM:
 		{
 			int32 index = fItemsListView->CurrentSelection();
             if (index >= 0 && index < (int32)fCurrentRoomItems.size()) {
                 _TakeItem(fCurrentRoomItems[index].id);
             }
+		} break;
+
+		case MSG_DROP_ITEM:
+		{
+			int32 index = fInventoryList->CurrentSelection();
+			if (index >= 0 && index < (int32)fInventoryItems.size()) {
+				_DropItem(fInventoryItems[index].id);
+			}
 		} break;
 
 		default:
@@ -496,15 +512,19 @@ MainWindow::_LoadInventory()
 		return;
 
 	fInventoryList->MakeEmpty();
+	fInventoryItems.clear();
 
 	std::vector<Item> items;
 	if (fDatabase->GetInventoryItems(items) != B_OK)
 		return;
 
-	for (const auto& item : items) {
-		if (item.isVisible)
-			fInventoryList->AddItem(new BStringItem(item.name));
+	for (size_t i = 0; i < items.size(); i++) {
+		fInventoryList->AddItem(new BStringItem(items[i].name.String()));
+        fInventoryItems.push_back(items[i]);
 	}
+
+	fDropItemBtn->SetEnabled(false);
+	fUseItemBtn->SetEnabled(false);
 }
 
 
@@ -535,7 +555,7 @@ MainWindow::_MoveToRoom(int roomId)
     // Reload the current room
     _LoadCurrentRoom();
 
-    printf("Moved to room %d\n", roomId);
+    TRACE(("Moved to room %d\n", roomId));
 }
 
 
@@ -555,4 +575,22 @@ MainWindow::_TakeItem(int itemId)
 
     // Refresh the room display
     _LoadCurrentRoom();
+}
+
+void
+MainWindow::_DropItem(int itemId)
+{
+	if (!fDatabase || !fDatabase->IsOpen())
+		return;
+
+	status_t status = fDatabase->MoveItemToRoom(itemId, fCurrentRoom.id);
+	if (status != B_OK) {
+		(new BAlert("Error", "Failed to drop item", "OK"))->Go();
+        return;
+	}
+
+	printf("Item %d dropped in room %d\n", itemId, fCurrentRoom.id);
+
+	// Refresh the room display
+	_LoadCurrentRoom();
 }

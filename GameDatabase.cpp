@@ -663,3 +663,35 @@ GameDatabase::MoveItemToInventory(int itemId)
 
     return B_OK;
 }
+
+
+status_t
+GameDatabase::MoveItemToRoom(int itemId, int roomId)
+{
+	if (!fDatabase)
+		return B_NO_INIT;
+
+	// Move item to current room by updating room_id
+	const char* sql = "UPDATE item_locations SET room_id = ? WHERE item_id = ?;";
+
+	sqlite3_stmt* stmt;
+	int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+	if (rc != SQLITE_OK) {
+		fprintf(stderr, "Failed to prepare drop item statement: %s\n",
+				sqlite3_errmsg(fDatabase));
+		return B_ERROR;
+	}
+
+	sqlite3_bind_int(stmt, 1, roomId);
+	sqlite3_bind_int(stmt, 2, itemId);
+
+	rc = sqlite3_step(stmt);
+	sqlite3_finalize(stmt);
+
+	if (rc != SQLITE_DONE) {
+		fprintf(stderr, "Failed to drop item: %s\n", sqlite3_errmsg(fDatabase));
+		return B_ERROR;
+	}
+
+	return B_OK;
+}

@@ -5,6 +5,11 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#ifdef DEBUG
+#   define TRACE(x...) printf("Pathfinder: " x)
+#else
+#   define TRACE(x...) ((void)0)
+#endif
 
 #include "GameDatabase.h"
 #include <Button.h>
@@ -25,7 +30,9 @@ enum {
 	MSG_MOVE_EAST  = 'movE',
 	MSG_MOVE_WEST  = 'movW',
 	MSG_ITEM_SELECTED = 'SItm',
-	MSG_TAKE_ITEM  = 'TItm'
+	MSG_INV_ITEM_SELECTED = 'IItm',
+	MSG_TAKE_ITEM  = 'TItm',
+	MSG_DROP_ITEM = 'DItm'
 };
 
 class MainWindow : public BWindow
@@ -52,11 +59,15 @@ private:
 			void 			_UpdateDirectionButtons();
 			void 			_MoveToRoom(int roomId);
 			void			_TakeItem(int itemId);
+			void			_DropItem(int itemId);
 
 			Room			fCurrentRoom;
 			std::vector<Item> fCurrentRoomItems;
+			std::vector<Item> fInventoryItems;
 			BListView* fItemsListView;
 			BButton* fTakeItemBtn;
+			BButton* fDropItemBtn;
+			BButton* fUseItemBtn;
 
 			// Structure to track selected item
 			Item fSelectedItem;

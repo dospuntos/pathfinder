@@ -3,7 +3,6 @@
  * All rights reserved. Distributed under the terms of the MIT license.
  */
 
-
 #include "App.h"
 #include "MainWindow.h"
 
