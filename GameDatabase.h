@@ -70,6 +70,7 @@ public:
     status_t GetGameState(GameState& state);
 	status_t UpdateGameState(const GameState& state);
 	status_t MoveToRoom(int newRoomId);
+	status_t MoveItemToInventory(int itemId);
 
     // Get the SQLite database handle (for future advanced queries)
     sqlite3* Handle() const { return fDatabase; }

@@ -23,7 +23,9 @@ enum {
 	MSG_MOVE_NORTH = 'movN',
 	MSG_MOVE_SOUTH = 'movS',
 	MSG_MOVE_EAST  = 'movE',
-	MSG_MOVE_WEST  = 'movW'
+	MSG_MOVE_WEST  = 'movW',
+	MSG_ITEM_SELECTED = 'SItm',
+	MSG_TAKE_ITEM  = 'TItm'
 };
 
 class MainWindow : public BWindow
@@ -49,7 +51,16 @@ private:
 			void 			_UpdateStatusBar(const GameState& state);
 			void 			_UpdateDirectionButtons();
 			void 			_MoveToRoom(int roomId);
+			void			_TakeItem(int itemId);
+
 			Room			fCurrentRoom;
+			std::vector<Item> fCurrentRoomItems;
+			BListView* fItemsListView;
+			BButton* fTakeItemBtn;
+
+			// Structure to track selected item
+			Item fSelectedItem;
+			bool fHasSelectedItem;
 
 			BMenuItem*		fSaveMenuItem;
 			BFilePanel*		fOpenPanel;

@@ -94,6 +94,12 @@ MainWindow::MainWindow()
 	BButton* dropButton  = new BButton("drop",  "Drop",     new BMessage('drop'));
 	BButton* combineButton = new BButton("combine", "Combine", new BMessage('comb'));
 
+	fItemsListView = new BListView("items_list");
+	fItemsListView->SetSelectionMessage(new BMessage(MSG_ITEM_SELECTED));
+
+	fTakeItemBtn = new BButton("take", "Take Item", new BMessage(MSG_TAKE_ITEM));
+	fTakeItemBtn->SetEnabled(false);
+
 	// --- Layout ---
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 	.Add(menuBar)
@@ -115,10 +121,12 @@ MainWindow::MainWindow()
 			.End()
 		// --- Right side: inventory and actions ---
 		.AddGroup(B_VERTICAL, 5, 0.3f)
+			.Add(new BStringView("items_label", "Items in room:"))
+			.Add(new BScrollView("items_scroll", fItemsListView, 0, false, true))
+			.Add(fTakeItemBtn)
 			.Add(new BStringView("inv_label", "Inventory:"))
 			.Add(fInventoryScroll, 1.0f)
-			.AddGroup(B_VERTICAL, 5)
-				.Add(pickButton)
+			.AddGroup(B_HORIZONTAL, 5)
 				.Add(dropButton)
 				.Add(combineButton)
 				.End()
@@ -220,6 +228,21 @@ MainWindow::MessageReceived(BMessage* message)
         {
             _MoveToRoom(fCurrentRoom.westRoomId);
         } break;
+
+		case MSG_ITEM_SELECTED:
+		{
+			int32 index = fItemsListView->CurrentSelection();
+            fTakeItemBtn->SetEnabled(index >= 0 &&
+                                     index < (int32)fCurrentRoomItems.size());
+		} break;
+
+		case MSG_TAKE_ITEM:
+		{
+			int32 index = fItemsListView->CurrentSelection();
+            if (index >= 0 && index < (int32)fCurrentRoomItems.size()) {
+                _TakeItem(fCurrentRoomItems[index].id);
+            }
+		} break;
 
 		default:
 		{
@@ -443,6 +466,18 @@ MainWindow::_LoadCurrentRoom()
 	else
 		fRoomImageView->SetText("📜 [No image]");
 
+	// Clear and populate items list
+    fItemsListView->MakeEmpty();
+    fCurrentRoomItems.clear();
+    fTakeItemBtn->SetEnabled(false);
+
+    for (size_t i = 0; i < roomItems.size(); i++) {
+        if (roomItems[i].canTake) {
+            fItemsListView->AddItem(new BStringItem(roomItems[i].name.String()));
+            fCurrentRoomItems.push_back(roomItems[i]);
+        }
+    }
+
 	// Update player stats
 	_UpdateStatusBar(state);
 
@@ -501,4 +536,23 @@ MainWindow::_MoveToRoom(int roomId)
     _LoadCurrentRoom();
 
     printf("Moved to room %d\n", roomId);
+}
+
+
+void
+MainWindow::_TakeItem(int itemId)
+{
+    if (!fDatabase || !fDatabase->IsOpen())
+        return;
+
+    status_t status = fDatabase->MoveItemToInventory(itemId);
+    if (status != B_OK) {
+        (new BAlert("Error", "Failed to take item", "OK"))->Go();
+        return;
+    }
+
+    printf("Item %d taken\n", itemId);
+
+    // Refresh the room display
+    _LoadCurrentRoom();
 }
