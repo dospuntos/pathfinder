@@ -12,6 +12,7 @@
 #endif
 
 #include "GameDatabase.h"
+#include "GameEditor.h"
 #include <Button.h>
 #include <FilePanel.h>
 #include <MenuBar.h>
@@ -36,7 +37,10 @@ enum {
 	MSG_EXAMINE_ITEM = 'EItm',
 	MSG_EXAMINE_INV_ITEM = 'EInv',
 	MSG_USE_ITEM = 'Uitm',
-	MSG_RESET_GAME = 'rset'
+	MSG_RESET_GAME = 'rset',
+	MSG_TOGGLE_EDIT_MODE = 'edit',
+	MSG_EDIT_ROOM = 'edrm',
+	MSG_CREATE_ROOM = 'crrm'
 };
 
 class MainWindow : public BWindow
@@ -56,6 +60,10 @@ private:
 			GameDatabase* 	fDatabase;
 			BString			fCurrentDatabasePath;
 
+			GameEditor* fEditor;
+			bool fEditMode;
+			BMenuItem* fEditModeItem;
+
 			void			_InitializeDatabase(BMessage& settings);
 			void 			_LoadCurrentRoom();
 			void 			_LoadInventory();
@@ -66,6 +74,10 @@ private:
 			void			_DropItem(int itemId);
 			void 			_UseItem(int itemId);
 			void 			_ExecuteItemAction(const ItemAction& action);
+
+			void _ToggleEditMode();
+			void _ShowEditRoomDialog();
+			void _ShowCreateRoomDialog();
 
 			Room			fCurrentRoom;
 			std::vector<Item> fCurrentRoomItems;

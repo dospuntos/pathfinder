@@ -32,7 +32,8 @@ APP_MIME_SIG = application/x-vnd.jpw-Pathfinder
 #	Also note that spaces in folder names do not work well with this Makefile.
 SRCS =  App.cpp \
 		MainWindow.cpp \
-		GameDatabase.cpp
+		GameDatabase.cpp \
+		GameEditor.cpp
 
 #	Specify the resource definition files to use. Full or relative paths can be
 #	used.

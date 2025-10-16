@@ -46,6 +46,9 @@ MainWindow::MainWindow()
 	fDatabase = new GameDatabase();
 	printf("GameDatabase created at %p\n", fDatabase);
 
+	fEditor = new GameEditor(fDatabase);
+	fEditMode = false;
+
 	BMenuBar* menuBar = _BuildMenu();
 
 	BMessenger messenger(this);
@@ -184,6 +187,7 @@ MainWindow::~MainWindow()
 	_SaveSettings();
 
 	delete fDatabase;
+	delete fEditor;
 	delete fOpenPanel;
 }
 
@@ -344,6 +348,21 @@ MainWindow::MessageReceived(BMessage* message)
 			}
 		} break;
 
+		case MSG_TOGGLE_EDIT_MODE:
+		{
+			_ToggleEditMode();
+		} break;
+
+		case MSG_EDIT_ROOM:
+		{
+			_ShowEditRoomDialog();
+		} break;
+
+		case MSG_CREATE_ROOM:
+		{
+			_ShowCreateRoomDialog();
+		} break;
+
 
 		default:
 		{
@@ -373,6 +392,11 @@ MainWindow::_BuildMenu()
 	fSaveMenuItem = new BMenuItem(B_TRANSLATE("Save"), new BMessage(kMsgSaveFile), 'S');
 	fSaveMenuItem->SetEnabled(false);
 	menu->AddItem(fSaveMenuItem);
+
+	menu->AddSeparatorItem();
+	fEditModeItem = new BMenuItem("Edit Mode", new BMessage(MSG_TOGGLE_EDIT_MODE));
+	fEditModeItem->SetMarked(false);
+	menu->AddItem(fEditModeItem);
 
 	menu->AddSeparatorItem();
 	item = new BMenuItem("Reset Game", new BMessage(MSG_RESET_GAME));
@@ -554,7 +578,8 @@ MainWindow::_LoadCurrentRoom()
 	// Update room name and description
 	BString windowTitle = fCurrentRoom.name;
 	windowTitle << " - " << kAppName;
-	SetTitle(windowTitle.String());
+	if (!fEditMode)
+		SetTitle(windowTitle.String());
 	fRoomNameView->SetText(fCurrentRoom.name);
 
 	BString fullDescription = fCurrentRoom.description;
@@ -813,4 +838,55 @@ MainWindow::_ExecuteItemAction(const ItemAction& action)
     } else {
         (new BAlert("Error", "Failed to execute action.", "OK"))->Go();
     }
+}
+
+
+void
+MainWindow::_ToggleEditMode()
+{
+    fEditMode = !fEditMode;
+    fEditModeItem->SetMarked(fEditMode);
+
+    if (fEditMode) {
+        // Entering edit mode - warn and clear state
+        BAlert* alert = new BAlert("Edit Mode",
+            "Entering Edit Mode will clear your game progress. Continue?",
+            "Cancel", "Edit Mode", NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+
+        if (alert->Go() == 0) {
+            // User cancelled
+            fEditMode = false;
+            fEditModeItem->SetMarked(false);
+            return;
+        }
+
+        fEditor->ClearGameState();
+        _LoadCurrentRoom();
+
+        SetTitle("Pathfinder - EDIT MODE");
+        printf("Edit mode enabled\n");
+    } else {
+        // Exiting edit mode - save as initial state
+        fEditor->SaveAsInitialState();
+        SetTitle("Pathfinder");
+        printf("Edit mode disabled\n");
+    }
+}
+
+
+void
+MainWindow::_ShowEditRoomDialog()
+{
+    // TODO: Show dialog to edit current room
+    // For now, just a placeholder
+    (new BAlert("Edit Room", "Edit room dialog coming soon!", "OK"))->Go();
+}
+
+
+void
+MainWindow::_ShowCreateRoomDialog()
+{
+    // TODO: Show dialog to create a new room
+    // For now, just a placeholder
+    (new BAlert("Create Room", "Create room dialog coming soon!", "OK"))->Go();
 }
