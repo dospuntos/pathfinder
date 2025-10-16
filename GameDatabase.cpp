@@ -488,14 +488,10 @@ GameDatabase::GetRoom(int roomId, Room& room)
         if (sqlite3_column_type(stmt, 3) != SQLITE_NULL)
             room.imagePath = (const char*)sqlite3_column_text(stmt, 3);
 
-        room.northRoomId = (sqlite3_column_type(stmt, 4) == SQLITE_NULL)
-            ? -1 : sqlite3_column_int(stmt, 4);
-        room.southRoomId = (sqlite3_column_type(stmt, 5) == SQLITE_NULL)
-            ? -1 : sqlite3_column_int(stmt, 5);
-        room.eastRoomId = (sqlite3_column_type(stmt, 6) == SQLITE_NULL)
-            ? -1 : sqlite3_column_int(stmt, 6);
-        room.westRoomId = (sqlite3_column_type(stmt, 7) == SQLITE_NULL)
-            ? -1 : sqlite3_column_int(stmt, 7);
+        room.northRoomId = sqlite3_column_int(stmt, 4);
+        room.southRoomId = sqlite3_column_int(stmt, 5);
+        room.eastRoomId = sqlite3_column_int(stmt, 6);
+        room.westRoomId = sqlite3_column_int(stmt, 7);
 
         room.graphX = sqlite3_column_int(stmt, 8);
         room.graphY = sqlite3_column_int(stmt, 9);

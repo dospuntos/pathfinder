@@ -20,6 +20,7 @@
 #include <View.h>
 #include <ScrollView.h>
 #include <Button.h>
+#include <CheckBox.h>
 
 #include <cstdio>
 
@@ -127,6 +128,12 @@ MainWindow::MainWindow()
 	fTakeItemBtn = new BButton("take", "Take Item", new BMessage(MSG_TAKE_ITEM));
 	fTakeItemBtn->SetEnabled(false);
 
+	// Create edit buttons (initially hidden)
+	fEditRoomBtn = new BButton("edit_room", "Edit Room", new BMessage(MSG_EDIT_ROOM));
+	fCreateRoomBtn = new BButton("create_room", "Create New Room", new BMessage(MSG_CREATE_ROOM));
+	fEditItemBtn = new BButton("edit_item", "Edit Item", new BMessage(MSG_EDIT_ITEM));
+	fCreateItemBtn = new BButton("create_item", "Create Item", new BMessage(MSG_CREATE_ITEM));
+
 	// --- Layout ---
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 	.Add(menuBar)
@@ -148,6 +155,10 @@ MainWindow::MainWindow()
 					.End()
 				.Add(fSouthBtn)
 				.End()
+				.AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+					.Add(fEditRoomBtn)
+					.Add(fCreateRoomBtn)
+				.End()
 			.End()
 		// --- Right side: inventory and actions ---
 		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 1.0f)
@@ -165,6 +176,11 @@ MainWindow::MainWindow()
 				.Add(fUseItemBtn)
 				.Add(combineButton)
 				.End()
+				// Edit mode buttons for items
+				.AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+					.Add(fEditItemBtn)
+					.Add(fCreateItemBtn)
+				.End()
 			.End()
 		.End()
 	// --- Status bar at bottom ---
@@ -179,6 +195,7 @@ MainWindow::MainWindow()
 
 	// Initialize database
 	_InitializeDatabase(settings);
+	_UpdateUIForMode();
 }
 
 
@@ -265,22 +282,34 @@ MainWindow::MessageReceived(BMessage* message)
 
 		case MSG_MOVE_NORTH:
         {
-            _MoveToRoom(fCurrentRoom.northRoomId, "north");
+            if (fEditMode && fCurrentRoom.northRoomId == 0)
+				_CreateRoomInDirection("north");
+			else
+				_MoveToRoom(fCurrentRoom.northRoomId, "north");
         } break;
 
         case MSG_MOVE_SOUTH:
         {
-            _MoveToRoom(fCurrentRoom.southRoomId, "south");
+			if (fEditMode && fCurrentRoom.southRoomId == 0)
+				_CreateRoomInDirection("south");
+			else
+				_MoveToRoom(fCurrentRoom.southRoomId, "south");
         } break;
 
         case MSG_MOVE_EAST:
         {
-            _MoveToRoom(fCurrentRoom.eastRoomId, "east");
+			if (fEditMode && fCurrentRoom.eastRoomId == 0)
+				_CreateRoomInDirection("east");
+			else
+				_MoveToRoom(fCurrentRoom.eastRoomId, "east");
         } break;
 
         case MSG_MOVE_WEST:
         {
-            _MoveToRoom(fCurrentRoom.westRoomId, "west");
+			if (fEditMode && fCurrentRoom.westRoomId == 0)
+				_CreateRoomInDirection("west");
+			else
+				_MoveToRoom(fCurrentRoom.westRoomId, "west");
         } break;
 
 		case MSG_ITEM_SELECTED:
@@ -363,6 +392,65 @@ MainWindow::MessageReceived(BMessage* message)
 			_ShowCreateRoomDialog();
 		} break;
 
+		case MSG_SAVE_ROOM_EDIT:
+		{
+			BWindow* window = NULL;
+			if (message->FindPointer("window", (void**)&window) != B_OK || !window)
+				break;
+
+			BTextControl* nameControl = (BTextControl*)window->FindView("name");
+			BTextView* descView = (BTextView*)window->FindView("description");
+
+			if (nameControl && descView) {
+				BString name = nameControl->Text();
+				BString desc = descView->Text();
+
+				status_t status = fEditor->UpdateRoom(fCurrentRoom.id, name, desc);
+				if (status == B_OK) {
+					_LoadCurrentRoom();
+					window->PostMessage(B_QUIT_REQUESTED);
+				} else {
+					(new BAlert("Error", "Failed to update room", "OK"))->Go();
+				}
+			}
+		} break;
+
+		case MSG_CREATE_ROOM_CONFIRM:
+		{
+			BWindow* window = NULL;
+			if (message->FindPointer("window", (void**)&window) != B_OK || !window)
+				break;
+
+			BTextControl* nameControl = (BTextControl*)window->FindView("name");
+			BTextView* descView = (BTextView*)window->FindView("description");
+			BCheckBox* connectCheck = (BCheckBox*)window->FindView("connect");
+
+			if (nameControl && descView) {
+				BString name = nameControl->Text();
+				BString desc = descView->Text();
+				bool connect = connectCheck && connectCheck->Value() == B_CONTROL_ON;
+
+				int newRoomId;
+				status_t status = fEditor->CreateRoom(name, desc, 0, 100, newRoomId);
+
+				if (status == B_OK) {
+					if (connect) {
+						fEditor->ConnectRooms(fCurrentRoom.id, "south", newRoomId);
+						fEditor->ConnectRooms(newRoomId, "north", fCurrentRoom.id);
+					}
+
+					_LoadCurrentRoom();
+					window->PostMessage(B_QUIT_REQUESTED);
+
+					BString msg;
+					msg << "Room created with ID " << newRoomId;
+					(new BAlert("Success", msg.String(), "OK"))->Go();
+				} else {
+					(new BAlert("Error", "Failed to create room", "OK"))->Go();
+				}
+			}
+		} break;
+
 
 		default:
 		{
@@ -394,12 +482,12 @@ MainWindow::_BuildMenu()
 	menu->AddItem(fSaveMenuItem);
 
 	menu->AddSeparatorItem();
-	fEditModeItem = new BMenuItem("Edit Mode", new BMessage(MSG_TOGGLE_EDIT_MODE));
+	fEditModeItem = new BMenuItem("Edit Mode", new BMessage(MSG_TOGGLE_EDIT_MODE), 'E');
 	fEditModeItem->SetMarked(false);
 	menu->AddItem(fEditModeItem);
 
 	menu->AddSeparatorItem();
-	item = new BMenuItem("Reset Game", new BMessage(MSG_RESET_GAME));
+	item = new BMenuItem("Reset Game", new BMessage(MSG_RESET_GAME), 'R');
 	menu->AddItem(item);
 
 	menu->AddSeparatorItem();
@@ -619,7 +707,7 @@ MainWindow::_LoadCurrentRoom()
 	// Update inventory too (so it stays in sync)
 	_LoadInventory();
 
-	// Update direction buttons
+	// Update buttons
 	_UpdateDirectionButtons();
 }
 
@@ -652,10 +740,53 @@ MainWindow::_LoadInventory()
 void
 MainWindow::_UpdateDirectionButtons()
 {
-	fNorthBtn->SetEnabled(fCurrentRoom.northRoomId != -1);
-	fSouthBtn->SetEnabled(fCurrentRoom.southRoomId!= -1);
-	fEastBtn->SetEnabled(fCurrentRoom.eastRoomId != -1);
-	fWestBtn->SetEnabled(fCurrentRoom.westRoomId != -1);
+    if (fEditMode) {
+        // Edit mode: Show "Go to X" for existing exits, "Create X" for empty ones
+        if (fCurrentRoom.northRoomId != 0) {
+            fNorthBtn->SetLabel("Go North ↑");
+            fNorthBtn->SetEnabled(true);
+        } else {
+            fNorthBtn->SetLabel("Create North ↑");
+            fNorthBtn->SetEnabled(true);
+        }
+
+        if (fCurrentRoom.southRoomId != 0) {
+            fSouthBtn->SetLabel("Go South ↓");
+            fSouthBtn->SetEnabled(true);
+        } else {
+            fSouthBtn->SetLabel("Create South ↓");
+            fSouthBtn->SetEnabled(true);
+        }
+
+        if (fCurrentRoom.eastRoomId != 0) {
+            fEastBtn->SetLabel("Go East →");
+            fEastBtn->SetEnabled(true);
+        } else {
+            fEastBtn->SetLabel("Create East →");
+            fEastBtn->SetEnabled(true);
+        }
+
+        if (fCurrentRoom.westRoomId != 0) {
+            fWestBtn->SetLabel("Go West ←");
+            fWestBtn->SetEnabled(true);
+        } else {
+            fWestBtn->SetLabel("Create West ←");
+            fWestBtn->SetEnabled(true);
+        }
+    } else {
+        // Play mode: Normal labels, disable if no exit
+        fNorthBtn->SetLabel("Go North");
+        fNorthBtn->SetEnabled(fCurrentRoom.northRoomId != 0);
+
+        fSouthBtn->SetLabel("Go South");
+        fSouthBtn->SetEnabled(fCurrentRoom.southRoomId != 0);
+
+        fEastBtn->SetLabel("Go East");
+        fEastBtn->SetEnabled(fCurrentRoom.eastRoomId != 0);
+
+        fWestBtn->SetLabel("Go West");
+        fWestBtn->SetEnabled(fCurrentRoom.westRoomId != 0);
+    }
 }
 
 
@@ -871,22 +1002,178 @@ MainWindow::_ToggleEditMode()
         SetTitle("Pathfinder");
         printf("Edit mode disabled\n");
     }
+
+	_UpdateUIForMode(); // Update UI visibility
 }
 
 
 void
 MainWindow::_ShowEditRoomDialog()
 {
-    // TODO: Show dialog to edit current room
-    // For now, just a placeholder
-    (new BAlert("Edit Room", "Edit room dialog coming soon!", "OK"))->Go();
+    if (!fEditMode || !fEditor->IsReady())
+        return;
+
+    // Create a window with text fields for room name and description
+    BWindow* editWindow = new BWindow(
+        BRect(100, 100, 600, 400),
+        "Edit Room",
+        B_TITLED_WINDOW,
+        B_NOT_RESIZABLE | B_AUTO_UPDATE_SIZE_LIMITS);
+
+    BTextControl* nameControl = new BTextControl("name", "Name:",
+        fCurrentRoom.name.String(), NULL);
+
+    BTextView* descView = new BTextView("description");
+    descView->SetText(fCurrentRoom.description.String());
+    BScrollView* descScroll = new BScrollView("desc_scroll", descView,
+        0, false, true);
+
+    BMessage* saveMsg = new BMessage(MSG_SAVE_ROOM_EDIT);
+	saveMsg->AddPointer("window", editWindow);
+	BButton* saveBtn = new BButton("save", "Save", saveMsg);
+    BButton* cancelBtn = new BButton("cancel", "Cancel", new BMessage(B_QUIT_REQUESTED));
+
+    BLayoutBuilder::Group<>(editWindow, B_VERTICAL, B_USE_DEFAULT_SPACING)
+        .SetInsets(B_USE_DEFAULT_SPACING)
+        .Add(nameControl)
+        .Add(new BStringView("desc_label", "Description:"))
+        .Add(descScroll)
+        .AddGroup(B_HORIZONTAL)
+            .AddGlue()
+            .Add(cancelBtn)
+            .Add(saveBtn)
+        .End()
+    .End();
+
+    // Store room ID in window for later
+    editWindow->AddChild(new BStringView("room_id", ""));  // Hidden
+    BStringView* idView = (BStringView*)editWindow->FindView("room_id");
+    BString idStr;
+    idStr << fCurrentRoom.id;
+    idView->SetText(idStr.String());
+
+    saveBtn->SetTarget(this);
+    cancelBtn->SetTarget(editWindow);
+
+    editWindow->Show();
 }
 
 
 void
 MainWindow::_ShowCreateRoomDialog()
 {
-    // TODO: Show dialog to create a new room
-    // For now, just a placeholder
-    (new BAlert("Create Room", "Create room dialog coming soon!", "OK"))->Go();
+    if (!fEditMode || !fEditor->IsReady())
+        return;
+
+    BWindow* createWindow = new BWindow(
+        BRect(100, 100, 600, 400),
+        "Create Room",
+        B_TITLED_WINDOW,
+        B_NOT_RESIZABLE | B_AUTO_UPDATE_SIZE_LIMITS);
+
+    BTextControl* nameControl = new BTextControl("name", "Name:",
+        "New Room", NULL);
+
+    BTextView* descView = new BTextView("description");
+    descView->SetText("You are in a new room.");
+    BScrollView* descScroll = new BScrollView("desc_scroll", descView,
+        0, false, true);
+
+    BCheckBox* connectCheck = new BCheckBox("connect",
+        "Connect to current room (south)", NULL);
+    connectCheck->SetValue(B_CONTROL_ON);
+
+    BMessage* createMsg = new BMessage(MSG_CREATE_ROOM_CONFIRM);
+	createMsg->AddPointer("window", createWindow);
+	BButton* createBtn = new BButton("create", "Create", createMsg);
+    BButton* cancelBtn = new BButton("cancel", "Cancel",
+        new BMessage(B_QUIT_REQUESTED));
+
+    BLayoutBuilder::Group<>(createWindow, B_VERTICAL, B_USE_DEFAULT_SPACING)
+        .SetInsets(B_USE_DEFAULT_SPACING)
+        .Add(nameControl)
+        .Add(new BStringView("desc_label", "Description:"))
+        .Add(descScroll)
+        .Add(connectCheck)
+        .AddGroup(B_HORIZONTAL)
+            .AddGlue()
+            .Add(cancelBtn)
+            .Add(createBtn)
+        .End()
+    .End();
+
+    createBtn->SetTarget(this);
+    cancelBtn->SetTarget(createWindow);
+
+    createWindow->Show();
 }
+
+
+void
+MainWindow::_UpdateUIForMode()
+{
+    if (fEditMode) {
+        // Show edit buttons
+        fEditRoomBtn->Show();
+        fCreateRoomBtn->Show();
+        fEditItemBtn->Show();
+        fCreateItemBtn->Show();
+
+        // Disable play-mode buttons
+        fTakeItemBtn->SetEnabled(false);
+        fDropItemBtn->SetEnabled(false);
+        fUseItemBtn->SetEnabled(false);
+    } else {
+        // Hide edit buttons
+        fEditRoomBtn->Hide();
+        fCreateRoomBtn->Hide();
+        fEditItemBtn->Hide();
+        fCreateItemBtn->Hide();
+
+        // Re-enable play-mode buttons (disabled by default, enabled on selection)
+        fTakeItemBtn->SetEnabled(false);
+        fDropItemBtn->SetEnabled(false);
+        fUseItemBtn->SetEnabled(false);
+    }
+
+    // Update direction buttons based on mode
+    _UpdateDirectionButtons();
+}
+
+void
+MainWindow::_CreateRoomInDirection(const char* direction)
+{
+    BString dirName = direction;
+    dirName.Capitalize();
+
+    BString defaultName;
+    defaultName << "Room " << dirName;
+
+    BString defaultDesc;
+    defaultDesc << "You are in a room to the " << direction
+                << " of where you came from.";
+
+    int newRoomId;
+    status_t status = fEditor->CreateRoom(defaultName, defaultDesc, 0, 100, newRoomId);
+
+    if (status == B_OK) {
+        // Connect rooms
+        fEditor->ConnectRooms(fCurrentRoom.id, direction, newRoomId);
+
+        // Connect back
+        BString opposite;
+        if (strcmp(direction, "north") == 0) opposite = "south";
+        else if (strcmp(direction, "south") == 0) opposite = "north";
+        else if (strcmp(direction, "east") == 0) opposite = "west";
+        else if (strcmp(direction, "west") == 0) opposite = "east";
+
+        fEditor->ConnectRooms(newRoomId, opposite.String(), fCurrentRoom.id);
+
+        _LoadCurrentRoom();
+
+        BString msg;
+        msg << "Room created to the " << direction;
+        (new BAlert("Success", msg.String(), "OK"))->Go();
+    }
+}
+

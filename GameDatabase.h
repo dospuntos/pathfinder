@@ -18,8 +18,8 @@ struct Room {
     int graphX;
     int graphY;
 
-    Room() : id(0), northRoomId(-1), southRoomId(-1),
-             eastRoomId(-1), westRoomId(-1), graphX(0), graphY(0) {}
+    Room() : id(0), northRoomId(0), southRoomId(0),
+             eastRoomId(0), westRoomId(0), graphX(0), graphY(0) {}
 };
 
 // Structure to hold item data

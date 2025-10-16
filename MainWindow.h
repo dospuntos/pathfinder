@@ -40,7 +40,12 @@ enum {
 	MSG_RESET_GAME = 'rset',
 	MSG_TOGGLE_EDIT_MODE = 'edit',
 	MSG_EDIT_ROOM = 'edrm',
-	MSG_CREATE_ROOM = 'crrm'
+	MSG_CREATE_ROOM = 'crrm',
+	MSG_EDIT_ITEM = 'edim',
+	MSG_CREATE_ITEM = 'crim',
+	MSG_SAVE_ROOM_EDIT = 'svre',
+	MSG_CREATE_ROOM_CONFIRM = 'crcr'
+
 };
 
 class MainWindow : public BWindow
@@ -74,10 +79,12 @@ private:
 			void			_DropItem(int itemId);
 			void 			_UseItem(int itemId);
 			void 			_ExecuteItemAction(const ItemAction& action);
+			void			_CreateRoomInDirection(const char* direction);
 
 			void _ToggleEditMode();
 			void _ShowEditRoomDialog();
 			void _ShowCreateRoomDialog();
+			void _UpdateUIForMode();
 
 			Room			fCurrentRoom;
 			std::vector<Item> fCurrentRoomItems;
@@ -111,6 +118,13 @@ private:
 			BStringView* 	fHealthView;
 			BStringView* 	fScoreView;
 			BStringView* 	fMovesView;
+
+			BButton* fEditRoomBtn;
+			BButton* fCreateRoomBtn;
+			BButton* fEditItemBtn;
+			BButton* fCreateItemBtn;
+
+
 };
 
 #endif
