@@ -77,6 +77,7 @@ public:
     bool IsOpen() const { return fDatabase != nullptr; }
     const char* Path() const { return fDatabasePath.String(); }
     bool VerifySchema();
+	status_t ClearGameState();
 
     // Query methods
     status_t GetRoom(int roomId, Room& room);
@@ -93,9 +94,13 @@ public:
 	status_t SetItemVisibility(int itemId, bool visible);
 	status_t RemoveItemFromRoom(int itemId);
 	status_t UnlockExit(int roomId, const char* direction);
+	bool IsExitLocked(int roomId, const char* direction);
 
     // Get the SQLite database handle (for future advanced queries)
     sqlite3* Handle() const { return fDatabase; }
+
+	// Add to GameDatabase.h for future edit mode (for item_locations)
+	status_t SaveCurrentStateAsInitial();
 
 private:
     sqlite3* fDatabase;

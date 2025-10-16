@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <Entry.h>
 
-// SQL Schema - same as before but in C++ string
+// SQL Schema
 static const char* kSchemaSQL = R"(
 CREATE TABLE rooms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,6 +36,13 @@ CREATE TABLE items (
 );
 
 CREATE TABLE item_locations (
+    item_id INTEGER PRIMARY KEY,
+    room_id INTEGER,
+    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
+);
+
+CREATE TABLE item_locations_initial (
     item_id INTEGER PRIMARY KEY,
     room_id INTEGER,
     FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
@@ -86,6 +93,27 @@ CREATE TABLE completed_actions (
     FOREIGN KEY (action_id) REFERENCES item_actions(id) ON DELETE CASCADE
 );
 
+CREATE TABLE removed_items (
+    item_id INTEGER PRIMARY KEY,
+    removed_at INTEGER DEFAULT (strftime('%s', 'now')),
+    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+);
+
+CREATE TABLE revealed_items (
+    item_id INTEGER PRIMARY KEY,
+    revealed_at INTEGER DEFAULT (strftime('%s', 'now')),
+    FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+);
+
+CREATE TABLE unlocked_exits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER NOT NULL,
+    direction TEXT NOT NULL,
+    unlocked_at INTEGER DEFAULT (strftime('%s', 'now')),
+    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+    UNIQUE(room_id, direction)
+);
+
 CREATE TABLE game_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     current_room_id INTEGER NOT NULL,
@@ -112,6 +140,7 @@ CREATE INDEX idx_item_combinations_items ON item_combinations(item1_id, item2_id
 CREATE INDEX idx_item_actions_room ON item_actions(room_id);
 CREATE INDEX idx_item_actions_item ON item_actions(item_id);
 CREATE INDEX idx_exit_conditions_room ON exit_conditions(room_id);
+CREATE INDEX idx_unlocked_exits_room ON unlocked_exits(room_id);
 )";
 
 
@@ -282,6 +311,48 @@ GameDatabase::VerifySchema()
 }
 
 
+// Add to GameDatabase.cpp
+
+status_t
+GameDatabase::ClearGameState()
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    printf("Clearing game state...\n");
+
+    // Clear all state tables
+    const char* clearSQL = R"(
+DELETE FROM completed_actions;
+DELETE FROM removed_items;
+DELETE FROM revealed_items;
+DELETE FROM unlocked_exits;
+DELETE FROM item_locations;
+
+-- Restore initial item locations from backup table
+INSERT INTO item_locations (item_id, room_id)
+SELECT item_id, room_id FROM item_locations_initial;
+
+-- Reset game state
+UPDATE game_state SET
+    current_room_id = (SELECT value FROM game_metadata WHERE key = 'starting_room_id'),
+    score = 0,
+    health = 100,
+    moves_count = 0,
+    start_time = strftime('%s', 'now')
+WHERE id = 1;
+)";
+
+    status_t status = _ExecuteSQL(clearSQL);
+    if (status == B_OK)
+        printf("Game state cleared successfully\n");
+    else
+        fprintf(stderr, "Failed to clear game state\n");
+
+    return status;
+}
+
+
 status_t
 GameDatabase::_ExecuteSQL(const char* sql)
 {
@@ -365,6 +436,10 @@ INSERT INTO items (id, name, description, room_description, can_take, can_use) V
 INSERT INTO item_locations (item_id, room_id) VALUES (1, 2);
 INSERT INTO item_locations (item_id, room_id) VALUES (2, 2);
 
+-- Store initial locations for game reset
+INSERT INTO item_locations_initial (item_id, room_id) VALUES (1, 2);
+INSERT INTO item_locations_initial (item_id, room_id) VALUES (2, 2);
+
 -- Initialize game state (start in cave)
 INSERT INTO game_state (id, current_room_id, start_time) VALUES
     (1, 1, strftime('%s', 'now'));
@@ -385,8 +460,6 @@ UPDATE game_metadata SET value = 'Pathfinder' WHERE key = 'author';
     return status;
 }
 
-
-// Add to GameDatabase.cpp
 
 status_t
 GameDatabase::GetRoom(int roomId, Room& room)
@@ -445,11 +518,13 @@ GameDatabase::GetItemsInRoom(int roomId, std::vector<Item>& items)
     items.clear();
 
     const char* sql = "SELECT i.id, i.name, i.description, i.room_description, "
-                      "i.image_path, i.can_take, i.can_use, i.can_combine, "
-                      "i.use_message, i.is_visible "
-                      "FROM items i "
-                      "JOIN item_locations il ON i.id = il.item_id "
-                      "WHERE il.room_id = ? AND i.is_visible = 1;";
+                  "i.image_path, i.can_take, i.can_use, i.can_combine, "
+                  "i.use_message, i.is_visible "
+                  "FROM items i "
+                  "JOIN item_locations il ON i.id = il.item_id "
+                  "WHERE il.room_id = ? "
+                  "AND i.id NOT IN (SELECT item_id FROM removed_items) "
+                  "AND (i.is_visible = 1 OR i.id IN (SELECT item_id FROM revealed_items));";
 
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
@@ -497,11 +572,12 @@ GameDatabase::GetInventoryItems(std::vector<Item>& items)
     items.clear();
 
     const char* sql = "SELECT i.id, i.name, i.description, i.room_description, "
-                      "i.image_path, i.can_take, i.can_use, i.can_combine, "
-                      "i.use_message, i.is_visible "
-                      "FROM items i "
-                      "JOIN item_locations il ON i.id = il.item_id "
-                      "WHERE il.room_id IS NULL;";
+                  "i.image_path, i.can_take, i.can_use, i.can_combine, "
+                  "i.use_message, i.is_visible "
+                  "FROM items i "
+                  "JOIN item_locations il ON i.id = il.item_id "
+                  "WHERE il.room_id IS NULL "
+                  "AND i.id NOT IN (SELECT item_id FROM removed_items);";
 
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
@@ -810,26 +886,48 @@ GameDatabase::SetItemVisibility(int itemId, bool visible)
     if (!fDatabase)
         return B_NO_INIT;
 
-    const char* sql = "UPDATE items SET is_visible = ? WHERE id = ?;";
+    if (visible) {
+        // Add to revealed_items (making it visible)
+        const char* sql = "INSERT OR IGNORE INTO revealed_items (item_id) VALUES (?);";
 
-    sqlite3_stmt* stmt;
-    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        fprintf(stderr, "Failed to prepare visibility statement: %s\n",
-                sqlite3_errmsg(fDatabase));
-        return B_ERROR;
-    }
+        sqlite3_stmt* stmt;
+        int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to prepare reveal item statement: %s\n",
+                    sqlite3_errmsg(fDatabase));
+            return B_ERROR;
+        }
 
-    sqlite3_bind_int(stmt, 1, visible ? 1 : 0);
-    sqlite3_bind_int(stmt, 2, itemId);
+        sqlite3_bind_int(stmt, 1, itemId);
 
-    rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
 
-    if (rc != SQLITE_DONE) {
-        fprintf(stderr, "Failed to set item visibility: %s\n",
-                sqlite3_errmsg(fDatabase));
-        return B_ERROR;
+        if (rc != SQLITE_DONE) {
+            fprintf(stderr, "Failed to reveal item: %s\n", sqlite3_errmsg(fDatabase));
+            return B_ERROR;
+        }
+    } else {
+        // Remove from revealed_items (hide it again - rarely used)
+        const char* sql = "DELETE FROM revealed_items WHERE item_id = ?;";
+
+        sqlite3_stmt* stmt;
+        int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to prepare hide item statement: %s\n",
+                    sqlite3_errmsg(fDatabase));
+            return B_ERROR;
+        }
+
+        sqlite3_bind_int(stmt, 1, itemId);
+
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE) {
+            fprintf(stderr, "Failed to hide item: %s\n", sqlite3_errmsg(fDatabase));
+            return B_ERROR;
+        }
     }
 
     return B_OK;
@@ -842,8 +940,8 @@ GameDatabase::RemoveItemFromRoom(int itemId)
     if (!fDatabase)
         return B_NO_INIT;
 
-    // Remove from item_locations (effectively removes from game)
-    const char* sql = "DELETE FROM item_locations WHERE item_id = ?;";
+    // Add to removed_items instead of deleting from item_locations
+    const char* sql = "INSERT OR IGNORE INTO removed_items (item_id) VALUES (?);";
 
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
@@ -859,8 +957,7 @@ GameDatabase::RemoveItemFromRoom(int itemId)
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
-        fprintf(stderr, "Failed to remove item: %s\n",
-                sqlite3_errmsg(fDatabase));
+        fprintf(stderr, "Failed to remove item: %s\n", sqlite3_errmsg(fDatabase));
         return B_ERROR;
     }
 
@@ -874,8 +971,8 @@ GameDatabase::UnlockExit(int roomId, const char* direction)
     if (!fDatabase)
         return B_NO_INIT;
 
-    // Remove the exit condition
-    const char* sql = "DELETE FROM exit_conditions WHERE room_id = ? AND direction = ?;";
+    // Add to unlocked_exits instead of deleting from exit_conditions
+    const char* sql = "INSERT OR IGNORE INTO unlocked_exits (room_id, direction) VALUES (?, ?);";
 
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
@@ -897,4 +994,52 @@ GameDatabase::UnlockExit(int roomId, const char* direction)
     }
 
     return B_OK;
+}
+
+
+bool
+GameDatabase::IsExitLocked(int roomId, const char* direction)
+{
+    if (!fDatabase)
+        return false;
+
+    // Check if there's an exit condition AND it hasn't been unlocked
+    const char* sql = "SELECT ec.is_locked, ec.locked_message "
+                      "FROM exit_conditions ec "
+                      "WHERE ec.room_id = ? AND ec.direction = ? "
+                      "AND NOT EXISTS ("
+                      "    SELECT 1 FROM unlocked_exits ue "
+                      "    WHERE ue.room_id = ec.room_id AND ue.direction = ec.direction"
+                      ");";
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK)
+        return false;
+
+    sqlite3_bind_int(stmt, 1, roomId);
+    sqlite3_bind_text(stmt, 2, direction, -1, SQLITE_TRANSIENT);
+
+    bool locked = (sqlite3_step(stmt) == SQLITE_ROW);
+    sqlite3_finalize(stmt);
+
+    return locked;
+}
+
+
+// Method to save item locations after edit mode, for game reset
+status_t
+GameDatabase::SaveCurrentStateAsInitial()
+{
+    if (!fDatabase)
+        return B_NO_INIT;
+
+    // Copy current item_locations to item_locations_initial
+    const char* sql = R"(
+DELETE FROM item_locations_initial;
+INSERT INTO item_locations_initial (item_id, room_id)
+SELECT item_id, room_id FROM item_locations;
+)";
+
+    return _ExecuteSQL(sql);
 }

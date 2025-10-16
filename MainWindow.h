@@ -35,7 +35,8 @@ enum {
 	MSG_DROP_ITEM = 'DItm',
 	MSG_EXAMINE_ITEM = 'EItm',
 	MSG_EXAMINE_INV_ITEM = 'EInv',
-	MSG_USE_ITEM = 'Uitm'
+	MSG_USE_ITEM = 'Uitm',
+	MSG_RESET_GAME = 'rset'
 };
 
 class MainWindow : public BWindow
@@ -60,7 +61,7 @@ private:
 			void 			_LoadInventory();
 			void 			_UpdateStatusBar(const GameState& state);
 			void 			_UpdateDirectionButtons();
-			void 			_MoveToRoom(int roomId);
+			void 			_MoveToRoom(int roomId, const char* direction);
 			void			_TakeItem(int itemId);
 			void			_DropItem(int itemId);
 			void 			_UseItem(int itemId);

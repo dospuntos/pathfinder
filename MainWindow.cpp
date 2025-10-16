@@ -30,6 +30,7 @@ static const uint32 kMsgNewFile = 'fnew';
 static const uint32 kMsgOpenFile = 'fopn';
 static const uint32 kMsgSaveFile = 'fsav';
 
+static const char* kAppName = "Pathfinder";
 static const char* kSettingsFolder = "Pathfinder";
 static const char* kSettingsFile = "Pathfinder_settings";
 static const char* kDefaultDatabaseFile = "default_adventure.db";
@@ -70,14 +71,33 @@ MainWindow::MainWindow()
 
 	// Room name
 	fRoomNameView = new BStringView("room_name", "Room Name");
-	fRoomNameView->SetFont(be_bold_font);
-	fRoomNameView->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
+	BFont headingFont(be_bold_font);
+	headingFont.SetSize(headingFont.Size() + 8.0f); // increase size by ~6 points
+
+	fRoomNameView->SetFont(&headingFont);
+	fRoomNameView->SetExplicitAlignment(BAlignment(B_ALIGN_CENTER, B_ALIGN_TOP));
 
 	// Room description
 	fRoomDescriptionView = new BTextView("room_description");
 	fRoomDescriptionView->MakeEditable(false);
 	fRoomDescriptionView->SetWordWrap(true);
-	fRoomDescriptionView->SetExplicitMinSize(BSize(250, 150));
+
+	// Use a slightly larger font for readability
+	BFont descriptionFont(be_plain_font);
+	descriptionFont.SetSize(descriptionFont.Size() + 2.0f);
+	rgb_color uiColor = ui_color(B_PANEL_TEXT_COLOR);
+	fRoomDescriptionView->SetFontAndColor(&descriptionFont, B_FONT_ALL, &uiColor);
+
+	// Match the window background
+	rgb_color bg = ui_color(B_PANEL_BACKGROUND_COLOR);
+	fRoomDescriptionView->SetViewColor(bg);
+	fRoomDescriptionView->SetLowColor(bg);
+	fRoomDescriptionView->SetHighColor(ui_color(B_PANEL_TEXT_COLOR));
+
+	// Optional: remove extra top margin (closer to room name)
+	fRoomDescriptionView->SetInsets(0, -2, 0, 0);
+	fRoomDescriptionView->SetExplicitAlignment(BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
+
 
 	// Inventory section
 	fInventoryList = new BListView("inventory_list");
@@ -110,21 +130,24 @@ MainWindow::MainWindow()
 	.AddGroup(B_HORIZONTAL, 10)
 		.SetInsets(10, 10, 10, 10)
 		// --- Left side: room content ---
-		.AddGroup(B_VERTICAL, 5, 1.0f)
+		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 8.0f)
 			.Add(fRoomImageView)
 			.Add(fRoomNameView)
 			.Add(fRoomDescriptionView)
-			.AddGroup(B_HORIZONTAL, 10)
+			.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING)
 				.AddGlue()
-				.Add(fWestBtn)
 				.Add(fNorthBtn)
+				.AddGroup(B_HORIZONTAL)
+					.AddGlue()
+					.Add(fWestBtn)
+					.Add(fEastBtn)
+					.AddGlue()
+					.End()
 				.Add(fSouthBtn)
-				.Add(fEastBtn)
-				.AddGlue()
 				.End()
 			.End()
 		// --- Right side: inventory and actions ---
-		.AddGroup(B_VERTICAL, 5, 0.3f)
+		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 1.0f)
 			.Add(new BStringView("items_label", "Items in room:"))
 			.Add(new BScrollView("items_scroll", fItemsListView, 0, false, true))
 			.AddGroup(B_HORIZONTAL, 5)
@@ -218,24 +241,42 @@ MainWindow::MessageReceived(BMessage* message)
 			fSavePanel->Show();
 		} break;
 
+		case MSG_RESET_GAME:
+		{
+			BAlert* alert = new BAlert("Reset Game",
+				"This will reset your progress. Continue?",
+				"Cancel", "Reset", NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+
+			if (alert->Go() == 1) {
+				status_t status = fDatabase->ClearGameState();
+				if (status == B_OK) {
+					_LoadCurrentRoom();
+					(new BAlert("Success", "Game progress reset.", "OK"))->Go();
+				} else {
+					(new BAlert("Error", "Failed to reset game.", "OK"))->Go();
+				}
+			}
+		} break;
+
+
 		case MSG_MOVE_NORTH:
         {
-            _MoveToRoom(fCurrentRoom.northRoomId);
+            _MoveToRoom(fCurrentRoom.northRoomId, "north");
         } break;
 
         case MSG_MOVE_SOUTH:
         {
-            _MoveToRoom(fCurrentRoom.southRoomId);
+            _MoveToRoom(fCurrentRoom.southRoomId, "south");
         } break;
 
         case MSG_MOVE_EAST:
         {
-            _MoveToRoom(fCurrentRoom.eastRoomId);
+            _MoveToRoom(fCurrentRoom.eastRoomId, "east");
         } break;
 
         case MSG_MOVE_WEST:
         {
-            _MoveToRoom(fCurrentRoom.westRoomId);
+            _MoveToRoom(fCurrentRoom.westRoomId, "west");
         } break;
 
 		case MSG_ITEM_SELECTED:
@@ -332,6 +373,10 @@ MainWindow::_BuildMenu()
 	fSaveMenuItem = new BMenuItem(B_TRANSLATE("Save"), new BMessage(kMsgSaveFile), 'S');
 	fSaveMenuItem->SetEnabled(false);
 	menu->AddItem(fSaveMenuItem);
+
+	menu->AddSeparatorItem();
+	item = new BMenuItem("Reset Game", new BMessage(MSG_RESET_GAME));
+	menu->AddItem(item);
 
 	menu->AddSeparatorItem();
 
@@ -507,6 +552,9 @@ MainWindow::_LoadCurrentRoom()
     }
 
 	// Update room name and description
+	BString windowTitle = fCurrentRoom.name;
+	windowTitle << " - " << kAppName;
+	SetTitle(windowTitle.String());
 	fRoomNameView->SetText(fCurrentRoom.name);
 
 	BString fullDescription = fCurrentRoom.description;
@@ -519,6 +567,8 @@ MainWindow::_LoadCurrentRoom()
     }
 
 	fRoomDescriptionView->SetText(fullDescription.String());
+	fRoomDescriptionView->InvalidateLayout();
+	fRoomDescriptionView->Invalidate();
 
 	// Optional: display image placeholder or file name
 	if (!fCurrentRoom.imagePath.IsEmpty())
@@ -585,23 +635,28 @@ MainWindow::_UpdateDirectionButtons()
 
 
 void
-MainWindow::_MoveToRoom(int roomId)
+MainWindow::_MoveToRoom(int roomId, const char* direction)
 {
     if (!fDatabase || !fDatabase->IsOpen())
         return;
+
+    // Check if the exit is locked
+    if (fDatabase->IsExitLocked(fCurrentRoom.id, direction)) {
+        (new BAlert("Locked", "That way is locked. You need to find a way to unlock it.", "OK"))->Go();
+        return;
+    }
 
     // Update the database
     status_t status = fDatabase->MoveToRoom(roomId);
     if (status != B_OK) {
         fprintf(stderr, "Failed to move to room %d\n", roomId);
-        // TODO: Show error alert to user
         return;
     }
 
     // Reload the current room
     _LoadCurrentRoom();
 
-    TRACE(("Moved to room %d\n", roomId));
+    printf("Moved to room %d\n", roomId);
 }
 
 
