@@ -50,9 +50,8 @@ public:
 
     // Finalize editing - save current state as the initial game state
     status_t SaveAsInitialState();
-
-    // Clear all game state (useful when entering edit mode)
     status_t ClearGameState();
+	status_t AutoLayoutRooms(int startRoomId = 1);
 
 private:
     GameDatabase* fDatabase;

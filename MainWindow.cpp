@@ -42,8 +42,6 @@ MainWindow::MainWindow()
 	BWindow(BRect(100, 100, 500, 400), B_TRANSLATE("Pathfinder"), B_TITLED_WINDOW,
 		B_ASYNCHRONOUS_CONTROLS | B_QUIT_ON_WINDOW_CLOSE)
 {
-	printf("MainWindow constructor starting\n");
-
 	fDatabase = new GameDatabase();
 	printf("GameDatabase created at %p\n", fDatabase);
 
@@ -134,6 +132,12 @@ MainWindow::MainWindow()
 	fEditItemBtn = new BButton("edit_item", "Edit Item", new BMessage(MSG_EDIT_ITEM));
 	fCreateItemBtn = new BButton("create_item", "Create Item", new BMessage(MSG_CREATE_ITEM));
 	fDeleteRoomBtn = new BButton("delete_room", "Delete current room", new BMessage(MSG_DELETE_ROOM));
+	BButton* autoLayoutBtn = new BButton("auto_layout", "Auto-layout", new BMessage(MSG_AUTO_LAYOUT));
+
+	// Create map view (initially hidden, shown in edit mode)
+	fMapView = new RoomMapView("map_view");
+	fMapView->SetExplicitMinSize(BSize(300, 300));
+	fMapScrollView = new BScrollView("map_scroll", fMapView, 0, true, true);
 
 	// --- Layout ---
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
@@ -160,10 +164,13 @@ MainWindow::MainWindow()
 					.Add(fEditRoomBtn)
 					.Add(fCreateRoomBtn)
 					.Add(fDeleteRoomBtn)
+					.Add(autoLayoutBtn)
 				.End()
 			.End()
 		// --- Right side: inventory and actions ---
 		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 0.3f)
+			.Add(new BStringView("map_label", "Interactive map:"))
+			.Add(fMapScrollView)
 			.Add(new BStringView("items_label", "Items in room:"))
 			.Add(new BScrollView("items_scroll", fItemsListView, 0, false, true))
 			.AddGroup(B_HORIZONTAL, 5)
@@ -195,9 +202,14 @@ MainWindow::MainWindow()
 		.Add(fMovesView = new BStringView("moves", "Moves: 0"))
 		.End();
 
+	// Initially hide the map
+	//fMapScrollView->Hide();
+
 	// Initialize database
 	_InitializeDatabase(settings);
 	_UpdateUIForMode();
+
+	fMapView->SetDatabase(fDatabase);
 }
 
 
@@ -501,6 +513,16 @@ MainWindow::MessageReceived(BMessage* message)
 			}
 		} break;
 
+		case MSG_AUTO_LAYOUT:
+		{
+			if (fEditMode) {
+				status_t status = fEditor->AutoLayoutRooms(fCurrentRoom.id);
+				if (status == B_OK) {
+					fMapView->SetDatabase(fDatabase);  // Refresh
+					(new BAlert("Success", "Rooms auto-layouted", "OK"))->Go();
+				}
+			}
+		} break;
 
 		default:
 		{
@@ -762,6 +784,11 @@ MainWindow::_LoadCurrentRoom()
 
 	// Update buttons
 	_UpdateDirectionButtons();
+
+	if (fEditMode) {
+        fMapView->SetDatabase(fDatabase);  // Refresh rooms
+        fMapView->SetCurrentRoom(fCurrentRoom.id);
+    }
 }
 
 
@@ -1172,6 +1199,10 @@ MainWindow::_UpdateUIForMode()
         fEditItemBtn->Show();
         fCreateItemBtn->Show();
 		fDeleteRoomBtn->Show();
+		fMapScrollView->Show();
+
+		fMapView->SetShowAllRooms(true);
+		fMapView->SetCurrentRoom(fCurrentRoom.id);
 
         // Disable play-mode buttons
         fTakeItemBtn->SetEnabled(false);
@@ -1184,6 +1215,7 @@ MainWindow::_UpdateUIForMode()
         fEditItemBtn->Hide();
         fCreateItemBtn->Hide();
 		fDeleteRoomBtn->Hide();
+		fMapScrollView->Hide();
 
         // Re-enable play-mode buttons (disabled by default, enabled on selection)
         fTakeItemBtn->SetEnabled(false);

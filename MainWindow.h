@@ -13,6 +13,7 @@
 
 #include "GameDatabase.h"
 #include "GameEditor.h"
+#include "RoomMapView.h"
 #include <Button.h>
 #include <FilePanel.h>
 #include <MenuBar.h>
@@ -46,7 +47,8 @@ enum {
 	MSG_SAVE_ROOM_EDIT = 'svre',
 	MSG_CREATE_ROOM_CONFIRM = 'crcr',
 	MSG_CREATE_ITEM_CONFIRM = 'cicr',
-	MSG_DELETE_ROOM = 'dtrm'
+	MSG_DELETE_ROOM = 'dtrm',
+	MSG_AUTO_LAYOUT = 'alyt'
 };
 
 class MainWindow : public BWindow
@@ -128,7 +130,8 @@ private:
 			BButton* fCreateItemBtn;
 			BButton* fDeleteRoomBtn;
 
-
+			RoomMapView* fMapView;
+			BScrollView* fMapScrollView;
 };
 
 #endif

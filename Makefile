@@ -33,7 +33,8 @@ APP_MIME_SIG = application/x-vnd.jpw-Pathfinder
 SRCS =  App.cpp \
 		MainWindow.cpp \
 		GameDatabase.cpp \
-		GameEditor.cpp
+		GameEditor.cpp \
+		RoomMapView.cpp
 
 #	Specify the resource definition files to use. Full or relative paths can be
 #	used.

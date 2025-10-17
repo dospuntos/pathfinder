@@ -1,5 +1,7 @@
 #include "GameEditor.h"
 #include <cstdio>
+#include <map>
+#include <queue>
 
 GameEditor::GameEditor(GameDatabase* database)
     :
@@ -149,30 +151,6 @@ GameEditor::DeleteRoom(int roomId)
             sqlite3_finalize(stmt);
         }
     }
-
-    // Step 2: Clear THIS room's connections to other rooms
-    // const char* clearOwnSQL =
-        // "UPDATE rooms SET north_room_id = NULL, south_room_id = NULL, "
-        // "east_room_id = NULL, west_room_id = NULL WHERE id = ?;";
-    //
-    // rc = sqlite3_prepare_v2(fDatabase->Handle(), clearOwnSQL, -1, &stmt, nullptr);
-    // if (rc != SQLITE_OK) {
-        // sqlite3_exec(fDatabase->Handle(), "ROLLBACK;", nullptr, nullptr, nullptr);
-        // fprintf(stderr, "Failed to prepare clear own connections: %s\n",
-                // sqlite3_errmsg(fDatabase->Handle()));
-        // return B_ERROR;
-    // }
-    //
-    // sqlite3_bind_int(stmt, 1, roomId);
-    // rc = sqlite3_step(stmt);
-    // sqlite3_finalize(stmt);
-    //
-    // if (rc != SQLITE_DONE) {
-        // sqlite3_exec(fDatabase->Handle(), "ROLLBACK;", nullptr, nullptr, nullptr);
-        // fprintf(stderr, "Failed to clear own connections: %s\n",
-                // sqlite3_errmsg(fDatabase->Handle()));
-        // return B_ERROR;
-    // }
 
     // Step 3: Clear OTHER rooms' connections TO this room
     const char* updateSQL[] = {
@@ -661,4 +639,133 @@ GameEditor::ClearGameState()
         return B_NO_INIT;
 
     return fDatabase->ClearGameState();
+}
+
+
+// Add to GameEditor.h
+status_t AutoLayoutRooms(int startRoomId = 1);
+
+// Add to GameEditor.cpp
+status_t
+GameEditor::AutoLayoutRooms(int startRoomId)
+{
+    if (!IsReady())
+        return B_NO_INIT;
+
+    printf("Auto-layouting rooms from room %d\n", startRoomId);
+
+    // Use breadth-first search to position rooms
+    std::map<int, bool> visited;
+    std::queue<int> toProcess;
+
+    // Start with the starting room at (0, 0)
+    toProcess.push(startRoomId);
+
+    const char* updateSQL = "UPDATE rooms SET graph_x = ?, graph_y = ? WHERE id = ?;";
+
+    // Set starting room position
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(fDatabase->Handle(), updateSQL, -1, &stmt, nullptr);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, 0);  // x = 0
+        sqlite3_bind_int(stmt, 2, 0);  // y = 0
+        sqlite3_bind_int(stmt, 3, startRoomId);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+
+    visited[startRoomId] = true;
+    std::map<int, std::pair<int, int>> positions;
+    positions[startRoomId] = std::make_pair(0, 0);
+
+    // Process rooms
+    while (!toProcess.empty()) {
+        int currentId = toProcess.front();
+        toProcess.pop();
+
+        // Get current room
+        Room room;
+        const char* getRoomSQL = "SELECT id, north_room_id, south_room_id, "
+                                "east_room_id, west_room_id FROM rooms WHERE id = ?;";
+
+        rc = sqlite3_prepare_v2(fDatabase->Handle(), getRoomSQL, -1, &stmt, nullptr);
+        if (rc != SQLITE_OK)
+            continue;
+
+        sqlite3_bind_int(stmt, 1, currentId);
+
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            int northId = sqlite3_column_int(stmt, 1);
+            int southId = sqlite3_column_int(stmt, 2);
+            int eastId = sqlite3_column_int(stmt, 3);
+            int westId = sqlite3_column_int(stmt, 4);
+            sqlite3_finalize(stmt);
+
+            int currentX = positions[currentId].first;
+            int currentY = positions[currentId].second;
+
+            // Position connected rooms relative to current room
+            struct Connection {
+                int id;
+                int dx;
+                int dy;
+            };
+
+            Connection connections[] = {
+                {northId, 0, -1},   // North is up (y decreases)
+                {southId, 0, 1},    // South is down (y increases)
+                {eastId, 1, 0},     // East is right (x increases)
+                {westId, -1, 0}     // West is left (x decreases)
+            };
+
+            for (int i = 0; i < 4; i++) {
+                int connectedId = connections[i].id;
+                if (connectedId > 0 && !visited[connectedId]) {
+                    int newX = currentX + connections[i].dx;
+                    int newY = currentY + connections[i].dy;
+
+                    // Check if position is already occupied
+                    bool occupied = false;
+                    for (auto& p : positions) {
+                        if (p.second.first == newX && p.second.second == newY) {
+                            occupied = true;
+                            // Try to find nearby free spot
+                            for (int offset = 1; offset < 10; offset++) {
+                                newX = currentX + connections[i].dx + offset;
+                                occupied = false;
+                                for (auto& p2 : positions) {
+                                    if (p2.second.first == newX && p2.second.second == newY) {
+                                        occupied = true;
+                                        break;
+                                    }
+                                }
+                                if (!occupied)
+                                    break;
+                            }
+                            break;
+                        }
+                    }
+
+                    positions[connectedId] = std::make_pair(newX, newY);
+                    visited[connectedId] = true;
+                    toProcess.push(connectedId);
+
+                    // Update database
+                    rc = sqlite3_prepare_v2(fDatabase->Handle(), updateSQL, -1, &stmt, nullptr);
+                    if (rc == SQLITE_OK) {
+                        sqlite3_bind_int(stmt, 1, newX * 100);  // Scale by 100 for spacing
+                        sqlite3_bind_int(stmt, 2, newY * 100);
+                        sqlite3_bind_int(stmt, 3, connectedId);
+                        sqlite3_step(stmt);
+                        sqlite3_finalize(stmt);
+                    }
+                }
+            }
+        } else {
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    printf("Auto-layout complete\n");
+    return B_OK;
 }
