@@ -94,27 +94,138 @@ GameEditor::DeleteRoom(int roomId)
     if (!IsReady())
         return B_NO_INIT;
 
-    // Note: Foreign keys will handle cleaning up connections
-    const char* sql = "DELETE FROM rooms WHERE id = ?;";
+    printf("Deleting room %d\n", roomId);
 
+    // Use a transaction for safety
+    sqlite3_exec(fDatabase->Handle(), "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+
+    // Step 1: If this is the current room, move to another room first
+    const char* checkCurrentSQL = "SELECT current_room_id FROM game_state WHERE id = 1;";
     sqlite3_stmt* stmt;
-    int rc = sqlite3_prepare_v2(fDatabase->Handle(), sql, -1, &stmt, nullptr);
+    int rc = sqlite3_prepare_v2(fDatabase->Handle(), checkCurrentSQL, -1, &stmt, nullptr);
+    if (rc == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            int currentRoomId = sqlite3_column_int(stmt, 0);
+            sqlite3_finalize(stmt);
+
+            if (currentRoomId == roomId) {
+                // Need to move to a different room
+                const char* findOtherSQL = "SELECT id FROM rooms WHERE id != ? LIMIT 1;";
+                rc = sqlite3_prepare_v2(fDatabase->Handle(), findOtherSQL, -1, &stmt, nullptr);
+                if (rc == SQLITE_OK) {
+                    sqlite3_bind_int(stmt, 1, roomId);
+                    if (sqlite3_step(stmt) == SQLITE_ROW) {
+                        int otherRoomId = sqlite3_column_int(stmt, 0);
+                        sqlite3_finalize(stmt);
+
+                        // Update game state to point to other room
+                        const char* updateStateSQL =
+                            "UPDATE game_state SET current_room_id = ? WHERE id = 1;";
+                        rc = sqlite3_prepare_v2(fDatabase->Handle(), updateStateSQL,
+                                               -1, &stmt, nullptr);
+                        if (rc == SQLITE_OK) {
+                            sqlite3_bind_int(stmt, 1, otherRoomId);
+                            rc = sqlite3_step(stmt);
+                            sqlite3_finalize(stmt);
+
+                            if (rc != SQLITE_DONE) {
+                                sqlite3_exec(fDatabase->Handle(), "ROLLBACK;",
+                                           nullptr, nullptr, nullptr);
+                                fprintf(stderr, "Failed to update game state\n");
+                                return B_ERROR;
+                            }
+                        }
+                    } else {
+                        // No other rooms - can't delete the last room
+                        sqlite3_finalize(stmt);
+                        sqlite3_exec(fDatabase->Handle(), "ROLLBACK;",
+                                   nullptr, nullptr, nullptr);
+                        fprintf(stderr, "Cannot delete the last room\n");
+                        return B_ERROR;
+                    }
+                }
+            }
+        } else {
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    // Step 2: Clear THIS room's connections to other rooms
+    // const char* clearOwnSQL =
+        // "UPDATE rooms SET north_room_id = NULL, south_room_id = NULL, "
+        // "east_room_id = NULL, west_room_id = NULL WHERE id = ?;";
+    //
+    // rc = sqlite3_prepare_v2(fDatabase->Handle(), clearOwnSQL, -1, &stmt, nullptr);
+    // if (rc != SQLITE_OK) {
+        // sqlite3_exec(fDatabase->Handle(), "ROLLBACK;", nullptr, nullptr, nullptr);
+        // fprintf(stderr, "Failed to prepare clear own connections: %s\n",
+                // sqlite3_errmsg(fDatabase->Handle()));
+        // return B_ERROR;
+    // }
+    //
+    // sqlite3_bind_int(stmt, 1, roomId);
+    // rc = sqlite3_step(stmt);
+    // sqlite3_finalize(stmt);
+    //
+    // if (rc != SQLITE_DONE) {
+        // sqlite3_exec(fDatabase->Handle(), "ROLLBACK;", nullptr, nullptr, nullptr);
+        // fprintf(stderr, "Failed to clear own connections: %s\n",
+                // sqlite3_errmsg(fDatabase->Handle()));
+        // return B_ERROR;
+    // }
+
+    // Step 3: Clear OTHER rooms' connections TO this room
+    const char* updateSQL[] = {
+        "UPDATE rooms SET north_room_id = NULL WHERE north_room_id = ?;",
+        "UPDATE rooms SET south_room_id = NULL WHERE south_room_id = ?;",
+        "UPDATE rooms SET east_room_id = NULL WHERE east_room_id = ?;",
+        "UPDATE rooms SET west_room_id = NULL WHERE west_room_id = ?;"
+    };
+
+    for (int i = 0; i < 4; i++) {
+        rc = sqlite3_prepare_v2(fDatabase->Handle(), updateSQL[i], -1, &stmt, nullptr);
+        if (rc != SQLITE_OK) {
+            sqlite3_exec(fDatabase->Handle(), "ROLLBACK;", nullptr, nullptr, nullptr);
+            fprintf(stderr, "Failed to prepare disconnect statement: %s\n",
+                    sqlite3_errmsg(fDatabase->Handle()));
+            return B_ERROR;
+        }
+
+        sqlite3_bind_int(stmt, 1, roomId);
+        rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE) {
+            sqlite3_exec(fDatabase->Handle(), "ROLLBACK;", nullptr, nullptr, nullptr);
+            fprintf(stderr, "Failed to disconnect rooms: %s\n",
+                    sqlite3_errmsg(fDatabase->Handle()));
+            return B_ERROR;
+        }
+    }
+
+    // Step 4: Now delete the room
+    const char* deleteSQL = "DELETE FROM rooms WHERE id = ?;";
+    rc = sqlite3_prepare_v2(fDatabase->Handle(), deleteSQL, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
+        sqlite3_exec(fDatabase->Handle(), "ROLLBACK;", nullptr, nullptr, nullptr);
         fprintf(stderr, "Failed to prepare delete room statement: %s\n",
                 sqlite3_errmsg(fDatabase->Handle()));
         return B_ERROR;
     }
 
     sqlite3_bind_int(stmt, 1, roomId);
-
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
+        sqlite3_exec(fDatabase->Handle(), "ROLLBACK;", nullptr, nullptr, nullptr);
         fprintf(stderr, "Failed to delete room: %s\n",
                 sqlite3_errmsg(fDatabase->Handle()));
         return B_ERROR;
     }
+
+    // Commit the transaction
+    sqlite3_exec(fDatabase->Handle(), "COMMIT;", nullptr, nullptr, nullptr);
 
     printf("Deleted room %d\n", roomId);
     return B_OK;

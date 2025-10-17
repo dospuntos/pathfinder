@@ -133,6 +133,7 @@ MainWindow::MainWindow()
 	fCreateRoomBtn = new BButton("create_room", "Create New Room", new BMessage(MSG_CREATE_ROOM));
 	fEditItemBtn = new BButton("edit_item", "Edit Item", new BMessage(MSG_EDIT_ITEM));
 	fCreateItemBtn = new BButton("create_item", "Create Item", new BMessage(MSG_CREATE_ITEM));
+	fDeleteRoomBtn = new BButton("delete_room", "Delete current room", new BMessage(MSG_DELETE_ROOM));
 
 	// --- Layout ---
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
@@ -140,7 +141,7 @@ MainWindow::MainWindow()
 	.AddGroup(B_HORIZONTAL, 10)
 		.SetInsets(10, 10, 10, 10)
 		// --- Left side: room content ---
-		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 8.0f)
+		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 2.0f)
 			.Add(fRoomImageView)
 			.Add(fRoomNameView)
 			.Add(fRoomDescriptionView)
@@ -158,10 +159,11 @@ MainWindow::MainWindow()
 				.AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
 					.Add(fEditRoomBtn)
 					.Add(fCreateRoomBtn)
+					.Add(fDeleteRoomBtn)
 				.End()
 			.End()
 		// --- Right side: inventory and actions ---
-		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 1.0f)
+		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 0.3f)
 			.Add(new BStringView("items_label", "Items in room:"))
 			.Add(new BScrollView("items_scroll", fItemsListView, 0, false, true))
 			.AddGroup(B_HORIZONTAL, 5)
@@ -392,6 +394,16 @@ MainWindow::MessageReceived(BMessage* message)
 			_ShowCreateRoomDialog();
 		} break;
 
+		case MSG_CREATE_ITEM:
+		{
+			_ShowCreateItemDialog();
+		} break;
+
+		case MSG_DELETE_ROOM:
+		{
+			_DeleteCurrentRoom();
+		} break;
+
 		case MSG_SAVE_ROOM_EDIT:
 		{
 			BWindow* window = NULL;
@@ -448,6 +460,44 @@ MainWindow::MessageReceived(BMessage* message)
 				} else {
 					(new BAlert("Error", "Failed to create room", "OK"))->Go();
 				}
+			}
+		} break;
+
+		case MSG_CREATE_ITEM_CONFIRM:
+		{
+			BWindow* window = NULL;
+			if (message->FindPointer("window", (void**)&window) != B_OK || !window)
+				break;
+
+			BTextControl* nameControl = (BTextControl*)window->FindView("name");
+			BTextView* descView = (BTextView*)window->FindView("description");
+			BTextView* roomDescView = (BTextView*)window->FindView("room_description");
+			BCheckBox* canTakeCheck = (BCheckBox*)window->FindView("can_take");
+			BCheckBox* canUseCheck = (BCheckBox*)window->FindView("can_use");
+			BCheckBox* placeHereCheck = (BCheckBox*)window->FindView("place_here");
+
+			int newItemId;
+			status_t status = fEditor->CreateItem(
+				nameControl->Text(),
+				descView->Text(),
+				roomDescView->Text(),
+				canTakeCheck->Value() == B_CONTROL_ON,
+				canUseCheck->Value() == B_CONTROL_ON,
+				newItemId
+			);
+
+			if (status == B_OK) {
+				if (placeHereCheck->Value() == B_CONTROL_ON) {
+					fEditor->PlaceItem(newItemId, fCurrentRoom.id);
+				}
+				_LoadCurrentRoom();
+				window->PostMessage(B_QUIT_REQUESTED);
+
+				BString msg;
+				msg << "Item created with ID " << newItemId;
+				(new BAlert("Success", msg.String(), "OK"))->Go();
+			} else {
+				(new BAlert("Error", "Failed to create item", "OK"))->Go();
 			}
 		} break;
 
@@ -678,6 +728,9 @@ MainWindow::_LoadCurrentRoom()
             fullDescription << "\n\n" << roomItems[i].roomDescription;
         }
     }
+
+	if (fEditMode)
+		fullDescription << "\n\nRoom ID: " << fCurrentRoom.id;
 
 	fRoomDescriptionView->SetText(fullDescription.String());
 	fRoomDescriptionView->InvalidateLayout();
@@ -1118,6 +1171,7 @@ MainWindow::_UpdateUIForMode()
         fCreateRoomBtn->Show();
         fEditItemBtn->Show();
         fCreateItemBtn->Show();
+		fDeleteRoomBtn->Show();
 
         // Disable play-mode buttons
         fTakeItemBtn->SetEnabled(false);
@@ -1129,6 +1183,7 @@ MainWindow::_UpdateUIForMode()
         fCreateRoomBtn->Hide();
         fEditItemBtn->Hide();
         fCreateItemBtn->Hide();
+		fDeleteRoomBtn->Hide();
 
         // Re-enable play-mode buttons (disabled by default, enabled on selection)
         fTakeItemBtn->SetEnabled(false);
@@ -1177,3 +1232,86 @@ MainWindow::_CreateRoomInDirection(const char* direction)
     }
 }
 
+void
+MainWindow::_ShowCreateItemDialog()
+{
+    BWindow* window = new BWindow(BRect(100, 100, 500, 450),
+        "Create Item", B_TITLED_WINDOW,
+        B_NOT_RESIZABLE | B_AUTO_UPDATE_SIZE_LIMITS);
+
+    BTextControl* nameControl = new BTextControl("name", "Name:", "New Item", NULL);
+
+    BTextView* descView = new BTextView("description");
+    descView->SetText("An interesting item.");
+    BScrollView* descScroll = new BScrollView("desc_scroll", descView, 0, false, true);
+
+    BTextView* roomDescView = new BTextView("room_description");
+    roomDescView->SetText("You see an item here.");
+    BScrollView* roomDescScroll = new BScrollView("room_desc_scroll", roomDescView, 0, false, true);
+
+    BCheckBox* canTakeCheck = new BCheckBox("can_take", "Can be taken", NULL);
+    canTakeCheck->SetValue(B_CONTROL_ON);
+
+    BCheckBox* canUseCheck = new BCheckBox("can_use", "Can be used", NULL);
+
+    BCheckBox* placeHereCheck = new BCheckBox("place_here",
+        "Place in current room", NULL);
+    placeHereCheck->SetValue(B_CONTROL_ON);
+
+    BMessage* createMsg = new BMessage(MSG_CREATE_ITEM_CONFIRM);
+    createMsg->AddPointer("window", window);
+    BButton* createBtn = new BButton("create", "Create", createMsg);
+    BButton* cancelBtn = new BButton("cancel", "Cancel", new BMessage(B_QUIT_REQUESTED));
+
+    BLayoutBuilder::Group<>(window, B_VERTICAL, B_USE_DEFAULT_SPACING)
+        .SetInsets(B_USE_DEFAULT_SPACING)
+        .Add(nameControl)
+        .Add(new BStringView("desc_label", "Description (when examined):"))
+        .Add(descScroll)
+        .Add(new BStringView("room_desc_label", "Room description (when in room):"))
+        .Add(roomDescScroll)
+        .Add(canTakeCheck)
+        .Add(canUseCheck)
+        .Add(placeHereCheck)
+        .AddGroup(B_HORIZONTAL)
+            .AddGlue()
+            .Add(cancelBtn)
+            .Add(createBtn)
+        .End()
+    .End();
+
+    createBtn->SetTarget(this);
+    cancelBtn->SetTarget(window);
+
+    window->Show();
+}
+
+
+void
+MainWindow::_DeleteCurrentRoom()
+{
+    BString msg;
+    msg << "Delete room '" << fCurrentRoom.name << "' (ID: " << fCurrentRoom.id << ")? This cannot be undone.";
+
+    BAlert* alert = new BAlert("Delete Room", msg.String(),
+        "Cancel", "Delete", NULL, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+
+    if (alert->Go() == 1) {
+        int previousRoom = fCurrentRoom.northRoomId;  // Try to go somewhere
+        if (previousRoom == 0) previousRoom = fCurrentRoom.southRoomId;
+        if (previousRoom == 0) previousRoom = fCurrentRoom.eastRoomId;
+        if (previousRoom == 0) previousRoom = fCurrentRoom.westRoomId;
+
+        status_t status = fEditor->DeleteRoom(fCurrentRoom.id);
+        if (status == B_OK) {
+            if (previousRoom > 0) {
+				if (fDatabase->GetRoom(previousRoom, fCurrentRoom) != B_OK)
+					return;
+                _LoadCurrentRoom();
+            }
+            (new BAlert("Success", "Room deleted", "OK"))->Go();
+        } else {
+            (new BAlert("Error", "Failed to delete room", "OK"))->Go();
+        }
+    }
+}

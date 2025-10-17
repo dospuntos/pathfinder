@@ -198,9 +198,17 @@ GameDatabase::CreateNew(const char* path)
     fDatabase = tempDb;
     fDatabasePath = path;
 
+	// Enable foreign keys
+    status_t status = _ExecuteSQL("PRAGMA foreign_keys = ON;");
+    if (status != B_OK) {
+        fprintf(stderr, "Failed to enable foreign keys\n");
+        Close();
+        return B_ERROR;
+    }
+
     // Create schema
     printf("CreateNew: Creating schema\n");
-    status_t status = _CreateSchema();
+    status = _CreateSchema();
     if (status != B_OK) {
         fprintf(stderr, "Failed to create schema\n");
         printf("CreateNew: Schema creation failed, closing database\n");
@@ -252,6 +260,14 @@ GameDatabase::Open(const char* path)
 
     fDatabase = tempDb;
     fDatabasePath = path;
+
+	// Enable foreign keys
+    status_t status = _ExecuteSQL("PRAGMA foreign_keys = ON;");
+    if (status != B_OK) {
+        fprintf(stderr, "Failed to enable foreign keys\n");
+        Close();
+        return B_ERROR;
+    }
 
     // Verify it has the correct schema
     if (!VerifySchema()) {

@@ -44,8 +44,9 @@ enum {
 	MSG_EDIT_ITEM = 'edim',
 	MSG_CREATE_ITEM = 'crim',
 	MSG_SAVE_ROOM_EDIT = 'svre',
-	MSG_CREATE_ROOM_CONFIRM = 'crcr'
-
+	MSG_CREATE_ROOM_CONFIRM = 'crcr',
+	MSG_CREATE_ITEM_CONFIRM = 'cicr',
+	MSG_DELETE_ROOM = 'dtrm'
 };
 
 class MainWindow : public BWindow
@@ -80,6 +81,8 @@ private:
 			void 			_UseItem(int itemId);
 			void 			_ExecuteItemAction(const ItemAction& action);
 			void			_CreateRoomInDirection(const char* direction);
+			void			_ShowCreateItemDialog();
+			void			_DeleteCurrentRoom();
 
 			void _ToggleEditMode();
 			void _ShowEditRoomDialog();
@@ -123,6 +126,7 @@ private:
 			BButton* fCreateRoomBtn;
 			BButton* fEditItemBtn;
 			BButton* fCreateItemBtn;
+			BButton* fDeleteRoomBtn;
 
 
 };
