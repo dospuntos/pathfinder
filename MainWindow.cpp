@@ -127,12 +127,8 @@ MainWindow::MainWindow()
 	fTakeItemBtn->SetEnabled(false);
 
 	// Create edit buttons (initially hidden)
-	fEditRoomBtn = new BButton("edit_room", "Edit Room", new BMessage(MSG_EDIT_ROOM));
-	fCreateRoomBtn = new BButton("create_room", "Create New Room", new BMessage(MSG_CREATE_ROOM));
 	fEditItemBtn = new BButton("edit_item", "Edit Item", new BMessage(MSG_EDIT_ITEM));
 	fCreateItemBtn = new BButton("create_item", "Create Item", new BMessage(MSG_CREATE_ITEM));
-	fDeleteRoomBtn = new BButton("delete_room", "Delete current room", new BMessage(MSG_DELETE_ROOM));
-	BButton* autoLayoutBtn = new BButton("auto_layout", "Auto-layout", new BMessage(MSG_AUTO_LAYOUT));
 
 	// Create map view (initially hidden, shown in edit mode)
 	fMapView = new RoomMapView("map_view");
@@ -160,16 +156,9 @@ MainWindow::MainWindow()
 					.End()
 				.Add(fSouthBtn)
 				.End()
-				.AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
-					.Add(fEditRoomBtn)
-					.Add(fCreateRoomBtn)
-					.Add(fDeleteRoomBtn)
-					.Add(autoLayoutBtn)
-				.End()
 			.End()
 		// --- Right side: inventory and actions ---
 		.AddGroup(B_VERTICAL, B_USE_DEFAULT_SPACING, 0.3f)
-			.Add(new BStringView("map_label", "Interactive map:"))
 			.Add(fMapScrollView)
 			.Add(new BStringView("items_label", "Items in room:"))
 			.Add(new BScrollView("items_scroll", fItemsListView, 0, false, true))
@@ -203,7 +192,7 @@ MainWindow::MainWindow()
 		.End();
 
 	// Initially hide the map
-	//fMapScrollView->Hide();
+	fMapScrollView->Hide();
 
 	// Initialize database
 	_InitializeDatabase(settings);
@@ -543,11 +532,8 @@ MainWindow::_BuildMenu()
 	// menu 'File'
 	menu = new BMenu(B_TRANSLATE("File"));
 
-	item = new BMenuItem(B_TRANSLATE("New"), new BMessage(kMsgNewFile), 'N');
-	menu->AddItem(item);
-
-	item = new BMenuItem(B_TRANSLATE("Open" B_UTF8_ELLIPSIS), new BMessage(kMsgOpenFile), 'O');
-	menu->AddItem(item);
+	menu->AddItem(new BMenuItem(B_TRANSLATE("New"), new BMessage(kMsgNewFile), 'N'));
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Open" B_UTF8_ELLIPSIS), new BMessage(kMsgOpenFile), 'O'));
 
 	fSaveMenuItem = new BMenuItem(B_TRANSLATE("Save"), new BMessage(kMsgSaveFile), 'S');
 	fSaveMenuItem->SetEnabled(false);
@@ -559,8 +545,7 @@ MainWindow::_BuildMenu()
 	menu->AddItem(fEditModeItem);
 
 	menu->AddSeparatorItem();
-	item = new BMenuItem("Reset Game", new BMessage(MSG_RESET_GAME), 'R');
-	menu->AddItem(item);
+	menu->AddItem(new BMenuItem("Reset Game", new BMessage(MSG_RESET_GAME), 'R'));
 
 	menu->AddSeparatorItem();
 
@@ -568,10 +553,22 @@ MainWindow::_BuildMenu()
 	item->SetTarget(be_app);
 	menu->AddItem(item);
 
-	item = new BMenuItem(B_TRANSLATE("Quit"), new BMessage(B_QUIT_REQUESTED), 'Q');
-	menu->AddItem(item);
+	menu->AddItem(new BMenuItem(B_TRANSLATE("Quit"), new BMessage(B_QUIT_REQUESTED), 'Q'));
 
 	menuBar->AddItem(menu);
+
+	// Menu 'Room'
+	fRoomMenu = new BMenu(B_TRANSLATE("Room"));
+
+	fRoomMenu->AddItem(new BMenuItem(B_TRANSLATE("Edit current room"), new BMessage(MSG_EDIT_ROOM), 'R'));
+	fRoomMenu->AddItem(new BMenuItem(B_TRANSLATE("Delete current room"), new BMessage(MSG_DELETE_ROOM), 'X'));
+
+	fRoomMenu->AddSeparatorItem();
+
+	fRoomMenu->AddItem(new BMenuItem(B_TRANSLATE("Auto-generate map"), new BMessage(MSG_AUTO_LAYOUT), 'A'));
+
+	menuBar->AddItem(fRoomMenu);
+
 
 	return menuBar;
 }
@@ -826,7 +823,7 @@ MainWindow::_UpdateDirectionButtons()
             fNorthBtn->SetLabel("Go North ↑");
             fNorthBtn->SetEnabled(true);
         } else {
-            fNorthBtn->SetLabel("Create North ↑");
+            fNorthBtn->SetLabel("* Create North ↑");
             fNorthBtn->SetEnabled(true);
         }
 
@@ -834,7 +831,7 @@ MainWindow::_UpdateDirectionButtons()
             fSouthBtn->SetLabel("Go South ↓");
             fSouthBtn->SetEnabled(true);
         } else {
-            fSouthBtn->SetLabel("Create South ↓");
+            fSouthBtn->SetLabel("* Create South ↓");
             fSouthBtn->SetEnabled(true);
         }
 
@@ -842,7 +839,7 @@ MainWindow::_UpdateDirectionButtons()
             fEastBtn->SetLabel("Go East →");
             fEastBtn->SetEnabled(true);
         } else {
-            fEastBtn->SetLabel("Create East →");
+            fEastBtn->SetLabel("* Create East →");
             fEastBtn->SetEnabled(true);
         }
 
@@ -850,21 +847,21 @@ MainWindow::_UpdateDirectionButtons()
             fWestBtn->SetLabel("Go West ←");
             fWestBtn->SetEnabled(true);
         } else {
-            fWestBtn->SetLabel("Create West ←");
+            fWestBtn->SetLabel("* Create West ←");
             fWestBtn->SetEnabled(true);
         }
     } else {
         // Play mode: Normal labels, disable if no exit
-        fNorthBtn->SetLabel("Go North");
+        fNorthBtn->SetLabel("Go North ↑");
         fNorthBtn->SetEnabled(fCurrentRoom.northRoomId != 0);
 
-        fSouthBtn->SetLabel("Go South");
+        fSouthBtn->SetLabel("Go South ↓");
         fSouthBtn->SetEnabled(fCurrentRoom.southRoomId != 0);
 
-        fEastBtn->SetLabel("Go East");
+        fEastBtn->SetLabel("Go East →");
         fEastBtn->SetEnabled(fCurrentRoom.eastRoomId != 0);
 
-        fWestBtn->SetLabel("Go West");
+        fWestBtn->SetLabel("Go West ←");
         fWestBtn->SetEnabled(fCurrentRoom.westRoomId != 0);
     }
 }
@@ -1193,12 +1190,10 @@ void
 MainWindow::_UpdateUIForMode()
 {
     if (fEditMode) {
-        // Show edit buttons
-        fEditRoomBtn->Show();
-        fCreateRoomBtn->Show();
+        // Show buttons and menus
+		fRoomMenu->SetEnabled(true);
         fEditItemBtn->Show();
         fCreateItemBtn->Show();
-		fDeleteRoomBtn->Show();
 		fMapScrollView->Show();
 
 		fMapView->SetShowAllRooms(true);
@@ -1209,12 +1204,10 @@ MainWindow::_UpdateUIForMode()
         fDropItemBtn->SetEnabled(false);
         fUseItemBtn->SetEnabled(false);
     } else {
-        // Hide edit buttons
-        fEditRoomBtn->Hide();
-        fCreateRoomBtn->Hide();
+        // Hide buttons and menus
+		fRoomMenu->SetEnabled(false);
         fEditItemBtn->Hide();
         fCreateItemBtn->Hide();
-		fDeleteRoomBtn->Hide();
 		fMapScrollView->Hide();
 
         // Re-enable play-mode buttons (disabled by default, enabled on selection)

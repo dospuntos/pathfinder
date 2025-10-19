@@ -108,6 +108,7 @@ private:
 			bool fHasSelectedItem;
 
 			BMenuItem*		fSaveMenuItem;
+			BMenu*			fRoomMenu;
 			BFilePanel*		fOpenPanel;
 			BFilePanel*		fSavePanel;
 
@@ -124,11 +125,8 @@ private:
 			BStringView* 	fScoreView;
 			BStringView* 	fMovesView;
 
-			BButton* fEditRoomBtn;
-			BButton* fCreateRoomBtn;
 			BButton* fEditItemBtn;
 			BButton* fCreateItemBtn;
-			BButton* fDeleteRoomBtn;
 
 			RoomMapView* fMapView;
 			BScrollView* fMapScrollView;
